@@ -8,14 +8,18 @@ REPO_ROOT="$(cd "$FRONT_END/.." && pwd)"
 # Locate Python — prefer a venv at repo root or front_end level
 PY=""
 for candidate in "$REPO_ROOT/venv/bin/python" "$REPO_ROOT/.venv/bin/python" \
-                  "$FRONT_END/venv/bin/python" "$FRONT_END/.venv/bin/python"; do
+                  "$FRONT_END/venv/bin/python" "$FRONT_END/.venv/bin/python" \
+                  "/c/Python314/python" "/c/Python313/python" "/c/Python312/python" \
+                  "/c/Python311/python" "/c/Python310/python"; do
   if [[ -x "$candidate" ]]; then
     PY="$candidate"
     break
   fi
 done
 if [[ -z "$PY" ]]; then
-  PY="$(command -v python3 2>/dev/null || true)"
+  PY="$(command -v python 2>/dev/null || command -v python3 2>/dev/null || true)"
+  # Skip Windows Store stub (it shows an error but exits 0 / isn't a real Python)
+  if [[ "$PY" == *"WindowsApps"* ]]; then PY=""; fi
 fi
 if [[ -z "$PY" || ! -x "$PY" ]]; then
   echo "No Python found. Create a venv at $REPO_ROOT/venv and pip install -r $FRONT_END/requirements.txt" >&2
@@ -44,4 +48,4 @@ trap cleanup EXIT INT TERM
 
 # Serve the public/ directory for Tauri's devUrl
 cd "$DESKTOP/public"
-exec python3 -m http.server 1420 --bind 127.0.0.1
+exec "$PY" -m http.server 1420 --bind 127.0.0.1

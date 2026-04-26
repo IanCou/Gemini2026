@@ -1,86 +1,451 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sift</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <div class="app">
-      <header class="topbar" data-tauri-drag-region>
-        <img src="sift-logo.png" alt="Sift" class="brand-logo" data-tauri-drag-region />
-        <div class="topbar-stats" id="topbar-stats">
-          <span class="dot dot-mongo" id="dot-mongo" title="MongoDB">●</span>
-          <span class="dot dot-gemini" id="dot-gemini" title="Gemini">●</span>
-          <span class="stat" id="stat-count">0 files indexed</span>
-          <span class="stat stat-project" id="stat-project"></span>
-        </div>
-        <div class="topbar-actions">
-          <button class="btn-icon" id="btn-undo" title="Undo last action">↺</button>
-          <button class="btn-icon" id="btn-rules" title="Install agent rules in active project">⎘</button>
-          <button class="btn-icon" id="btn-settings" title="Settings">⚙</button>
-        </div>
-      </header>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sift</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body, #root { margin: 0; padding: 0; height: 100%; background: #0a0a0f; }
+  body {
+    font-family: 'Inter', -apple-system, system-ui, sans-serif;
+    color: #c8c4d8;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  * { box-sizing: border-box; }
+  ::selection { background: rgba(74,144,217,0.35); color: #fff; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: rgba(123,82,192,0.18); border-radius: 4px; }
+  *::-webkit-scrollbar-thumb:hover { background: rgba(123,82,192,0.32); }
 
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-head">
-          <span>Projects</span>
-          <button class="btn-mini" id="btn-new-project" title="Add project (browse for folder)">＋</button>
-        </div>
-        <ul class="proj-list" id="proj-list">
-          <li class="proj active" data-id=""><div class="proj-name">All files</div><div class="proj-meta"><span id="proj-meta-all">—</span></div></li>
-        </ul>
-        <div class="sidebar-foot">
-          <button class="btn-mini wide" id="btn-index-active" title="Index the active project's folder">⟳ Index project</button>
-        </div>
-      </aside>
+  .starfield-bg {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image:
+      radial-gradient(1px 1px at 8% 12%, rgba(192,154,58,0.5), transparent 1px),
+      radial-gradient(1px 1px at 22% 78%, rgba(192,80,74,0.4), transparent 1px),
+      radial-gradient(1px 1px at 71% 28%, rgba(74,111,192,0.5), transparent 1px),
+      radial-gradient(1px 1px at 86% 64%, rgba(74,140,92,0.45), transparent 1px),
+      radial-gradient(1px 1px at 36% 42%, rgba(138,92,192,0.4), transparent 1px),
+      radial-gradient(1px 1px at 58% 88%, rgba(255,255,255,0.25), transparent 1px),
+      radial-gradient(1px 1px at 14% 56%, rgba(74,144,217,0.4), transparent 1px),
+      radial-gradient(1px 1px at 92% 18%, rgba(245,166,35,0.4), transparent 1px);
+    background-size: 800px 800px, 600px 600px, 700px 700px, 500px 500px, 900px 900px, 650px 650px, 750px 750px, 550px 550px;
+  }
+</style>
+</head>
+<body>
+<div class="starfield-bg"></div>
+<div id="root"></div>
 
-      <nav class="modebar">
-        <button class="mode active" data-mode="constellation">✦ Constellation</button>
-        <button class="mode" data-mode="pipeline">▸ Pipeline</button>
-        <button class="mode" data-mode="waterfall">▤ Scores</button>
-      </nav>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 
-      <section class="canvas-wrap">
-        <canvas id="viz"></canvas>
-        <div class="canvas-overlay" id="canvas-overlay"></div>
-      </section>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="backend.jsx"></script>
+<script type="text/babel" src="ui.jsx"></script>
+<script type="text/babel" src="constellation.jsx"></script>
 
-      <section class="chat">
-        <div id="log" class="log" aria-live="polite"></div>
-        <form id="chat-form" class="chat-form">
-          <div class="input-row">
-            <textarea id="msg" rows="2" placeholder="Ask Sift, e.g. 'find the auth diagram'"></textarea>
-            <button type="submit" class="btn-send" aria-label="Send">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/>
-              </svg>
-            </button>
-          </div>
-          <div class="quickbar">
-            <button type="button" class="chip" data-cmd="/index">/index project</button>
-            <button type="button" class="chip" data-cmd="find the architecture diagram">find the architecture diagram</button>
-            <button type="button" class="chip" data-cmd="/clear">/clear</button>
-          </div>
-        </form>
-      </section>
+<script type="text/babel">
+const TWEAK_DEFAULTS = {
+  "logoVariant": "cloud",
+  "starDensity": 0.49,
+  "surfaceLight": true,
+  "motion": 78
+};
 
-      <footer class="feed" id="feed" aria-live="polite"></footer>
+function App() {
+  const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  // ─── core state ──────────────────────────────────────────────────────────
+  const [graph, setGraph] = React.useState(() => buildGraph('webapp'));
+  const [selectedId, setSelectedId] = React.useState(null);
+  const [hoverNode, setHoverNode] = React.useState(null);
+  const [hoverPos, setHoverPos] = React.useState(null);
+  const [searchValue, setSearchValue] = React.useState('');
+  const [committedQuery, setCommittedQuery] = React.useState('');
+  const [searchFocused, setSearchFocused] = React.useState(false);
+  const [reticle, setReticle] = React.useState(null);
+  const [cameraFocus, setCameraFocus] = React.useState(null);
+  const [topMatches, setTopMatches] = React.useState([]);
+  const [totalMatches, setTotalMatches] = React.useState(0);
+  const [pulseIds, setPulseIds] = React.useState(() => new Set());
+  const [camPos, setCamPos] = React.useState(null);
+
+  // ─── backend state ───────────────────────────────────────────────────────
+  const [projects, setProjects] = React.useState([]);
+  const [projectRoot, setProjectRoot] = React.useState(null);
+  const [chatOpen, setChatOpen] = React.useState(false);
+
+  // overlay states: 'onboarding' | 'indexing' | 'error' | null
+  const [overlay, setOverlay] = React.useState(null);
+  const [indexingProgress, setIndexingProgress] = React.useState(1);
+  const [currentFile, setCurrentFile] = React.useState('');
+  const [apiKey, setApiKey] = React.useState('');
+
+  const cameraRef = React.useRef(null);
+
+  // ─── load real projects on mount ─────────────────────────────────────────
+  React.useEffect(() => {
+    fetchProjects().then(ps => {
+      setProjects(ps);
+      if (ps.length > 0) {
+        setProjectRoot(ps[0].root || ps[0].id || null);
+      }
+    }).catch(() => {
+      // Backend not running — use demo data
+    });
+  }, []);
+
+  // ─── rebuild graph when projectRoot changes ───────────────────────────────
+  React.useEffect(() => {
+    const load = async () => {
+      let g;
+      if (projectRoot) {
+        try {
+          g = await buildGraphFromBackend(projectRoot);
+        } catch {
+          g = buildGraph('webapp');
+        }
+      } else {
+        g = buildGraph('webapp');
+      }
+      setGraph(g);
+      setSelectedId(null);
+      setReticle(null);
+      setCameraFocus(null);
+      setTopMatches([]);
+      setTotalMatches(0);
+      setPulseIds(new Set());
+      runIndexingAnimation(g);
+    };
+    load();
+  // eslint-disable-next-line
+  }, [projectRoot]);
+
+  // ─── indexing animation ───────────────────────────────────────────────────
+  const runIndexingAnimation = React.useCallback((g) => {
+    setOverlay('indexing');
+    setIndexingProgress(0);
+    const total = g.nodes.length;
+    const start = performance.now();
+    const duration = 2200;
+    const step = () => {
+      const t = Math.min(1, (performance.now() - start) / duration);
+      const eased = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2,2)/2;
+      setIndexingProgress(eased);
+      const idx = Math.min(total - 1, Math.floor(eased * total));
+      setCurrentFile(g.nodes[idx]?.path || '');
+      if (t < 1) requestAnimationFrame(step);
+      else {
+        setIndexingProgress(1);
+        setTimeout(() => setOverlay(null), 350);
+      }
+    };
+    requestAnimationFrame(step);
+  }, []);
+
+  // Run indexing once on mount
+  React.useEffect(() => { runIndexingAnimation(graph); /* eslint-disable-next-line */ }, []);
+
+  // ─── search ───────────────────────────────────────────────────────────────
+  React.useEffect(() => {
+    const q = committedQuery.trim();
+    if (!q) {
+      setReticle(null);
+      setCameraFocus(null);
+      setTopMatches([]);
+      setTotalMatches(0);
+      setPulseIds(new Set());
+      return;
+    }
+
+    const runSearch = async () => {
+      let scored = [];
+
+      // Try real backend search first
+      if (projectRoot) {
+        try {
+          scored = await searchFiles(q, projectRoot, graph.nodes);
+        } catch { /* fall through to in-memory */ }
+      }
+
+      // Fallback: in-memory fuzzy match
+      if (scored.length === 0) {
+        const ql = q.toLowerCase();
+        scored = graph.nodes.map(n => {
+          const name = n.name.toLowerCase();
+          const cluster = n.cluster.toLowerCase();
+          const path = n.path.toLowerCase();
+          let score = 0;
+          if (name === ql) score = 100;
+          else if (name.startsWith(ql)) score = 80;
+          else if (name.includes(ql)) score = 60;
+          else if (cluster === ql) score = 50;
+          else if (cluster.includes(ql)) score = 40;
+          else if (path.includes(ql)) score = 20;
+          if (score > 0) score += Math.max(0, 10 - name.length * 0.2);
+          return { node: n, score };
+        }).filter(x => x.score > 0);
+      }
+
+      if (scored.length === 0) {
+        setPulseIds(new Set());
+        setReticle(null);
+        setCameraFocus(null);
+        setTopMatches([]);
+        setTotalMatches(0);
+        return;
+      }
+
+      scored.sort((a, b) => b.score - a.score);
+      setPulseIds(new Set());
+      setTotalMatches(scored.length);
+      setTopMatches(scored.slice(0, 3));
+      setReticle(null);
+
+      const best = scored[0].node;
+      const second = scored[1];
+      const ambiguous = second && (scored[0].score - second.score) <= 8 && second.node.cluster === best.cluster;
+      const sameCluster = scored.map(s => s.node).filter(n => n.cluster === best.cluster);
+      const focusSet = sameCluster.length >= 2 ? sameCluster : scored.map(s => s.node);
+
+      const cx = focusSet.reduce((s, n) => s + n.x, 0) / focusSet.length;
+      const cy = focusSet.reduce((s, n) => s + n.y, 0) / focusSet.length;
+      const cz = focusSet.reduce((s, n) => s + n.z, 0) / focusSet.length;
+
+      let vx, vy, vz;
+      if (ambiguous || focusSet.length < 2) {
+        const olen = Math.hypot(cx, cy, cz) || 1;
+        vx = cx/olen; vy = cy/olen; vz = cz/olen;
+      } else {
+        const dx = best.x - cx, dy = best.y - cy, dz = best.z - cz;
+        const dlen = Math.hypot(dx, dy, dz) || 1;
+        vx = dx/dlen; vy = dy/dlen; vz = dz/dlen;
+      }
+
+      let spread = 0;
+      focusSet.forEach(n => { spread = Math.max(spread, Math.hypot(n.x - cx, n.y - cy, n.z - cz)); });
+      const distance = Math.max(110, Math.min(280, spread * (ambiguous ? 5.5 : 4.6) + (ambiguous ? 110 : 90)));
+      const phi = Math.acos(Math.max(-1, Math.min(1, vy)));
+      const theta = Math.atan2(vz, vx);
+      setCameraFocus({ target: { x: cx, y: cy, z: cz }, bestPos: { x: best.x, y: best.y, z: best.z }, theta, phi, distance });
+    };
+
+    runSearch();
+  }, [committedQuery, graph, projectRoot]);
+
+  const frameNodes = React.useCallback((nodes, best = null, mode = 'best') => {
+    if (!nodes || nodes.length === 0) return;
+    const cx = nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
+    const cy = nodes.reduce((s, n) => s + n.y, 0) / nodes.length;
+    const cz = nodes.reduce((s, n) => s + n.z, 0) / nodes.length;
+    let vx, vy, vz;
+    if (mode === 'best' && best) {
+      const dx = best.x - cx, dy = best.y - cy, dz = best.z - cz;
+      const dlen = Math.hypot(dx, dy, dz);
+      if (dlen > 0.001) { vx = dx/dlen; vy = dy/dlen; vz = dz/dlen; }
+    }
+    if (vx === undefined) {
+      const olen = Math.hypot(cx, cy, cz);
+      if (olen > 0.001) { vx = cx/olen; vy = cy/olen; vz = cz/olen; }
+      else { vx = 0; vy = 0; vz = 1; }
+    }
+    let spread = 0;
+    nodes.forEach(n => { spread = Math.max(spread, Math.hypot(n.x - cx, n.y - cy, n.z - cz)); });
+    const distance = Math.max(110, Math.min(280, spread * (mode === 'best' ? 4.6 : 5.5) + (mode === 'best' ? 90 : 110)));
+    const phi = Math.acos(Math.max(-1, Math.min(1, vy)));
+    const theta = Math.atan2(vz, vx);
+    setCameraFocus({ target: { x: cx, y: cy, z: cz }, theta, phi, distance });
+  }, []);
+
+  const onPickResult = React.useCallback((node) => {
+    setPulseIds(new Set());
+    setReticle(null);
+    frameNodes([node], node, 'best');
+    setSelectedId(node.id);
+  }, [frameNodes]);
+
+  const onPickCluster = React.useCallback((clusterName) => {
+    const inCluster = graph.nodes.filter(n => n.cluster === clusterName);
+    if (inCluster.length === 0) return;
+    setPulseIds(new Set());
+    setReticle(null);
+    frameNodes(inCluster, null, 'cluster');
+  }, [graph, frameNodes]);
+
+  const onHover = React.useCallback((node, screen) => {
+    setHoverNode(node);
+    setHoverPos(screen);
+  }, []);
+
+  const onNodeClick = React.useCallback((node) => {
+    setSelectedId(node.id);
+    setPulseIds(new Set());
+    setReticle(null);
+    frameNodes([node], node, 'best');
+  }, [frameNodes]);
+
+  const onCameraChange = React.useCallback((pos) => {
+    setCamPos({ x: pos.x, y: pos.y, z: pos.z });
+  }, []);
+
+  const selectedNode = selectedId != null ? graph.nodes[selectedId] : null;
+
+  // Build allProjects map for the header switcher
+  const allProjectsMap = React.useMemo(() => {
+    const m = {};
+    if (projects.length > 0) {
+      projects.forEach(p => {
+        m[p.root || p.id] = { name: p.name, description: `${p.count || 0} files` };
+      });
+    } else {
+      Object.entries(PROJECTS).forEach(([k, v]) => { m[k] = { name: v.name, description: v.description }; });
+    }
+    return m;
+  }, [projects]);
+
+  const currentProjectKey = projectRoot || (projects.length > 0 ? (projects[0].root || projects[0].id) : 'webapp');
+
+  return (
+    <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#0a0a0f' }}>
+      <Constellation
+        graph={graph}
+        starFieldDensity={tweaks.starDensity}
+        surfaceLightness={tweaks.surfaceLight ? 1 : 0}
+        motionIntensity={tweaks.motion / 100}
+        reticle={reticle}
+        cameraFocus={cameraFocus}
+        pulseIds={pulseIds}
+        onHover={onHover}
+        onClick={onNodeClick}
+        selectedId={selectedId}
+        cameraRef={cameraRef}
+        onCameraChange={onCameraChange}
+        indexingProgress={indexingProgress}
+      />
+
+      <AppHeader
+        projectKey={currentProjectKey}
+        project={graph.project}
+        allProjects={allProjectsMap}
+        onPickProject={(k) => setProjectRoot(k)}
+        logoVariant={tweaks.logoVariant}
+        surfaceLight={tweaks.surfaceLight}
+        onSwitchProject={() => setOverlay('onboarding')}
+        chatOpen={chatOpen}
+        onChatToggle={() => setChatOpen(o => !o)}
+      />
+
+      <SettingsButton
+        apiKey={apiKey}
+        onApiKeyChange={setApiKey}
+        onReindex={() => runIndexingAnimation(graph)}
+      />
+
+      {hoverNode && hoverPos && hoverNode.id !== selectedId && (
+        <HoverTooltip node={hoverNode} screen={hoverPos} />
+      )}
+
+      <MiniMap graph={graph} camPos={camPos} selectedId={selectedId} pulseIds={pulseIds} />
+
+      <TopResults
+        results={topMatches}
+        mimeColors={window.MIME_COLORS}
+        onPick={onPickResult}
+        onPickCluster={onPickCluster}
+      />
+
+      <SearchBar
+        value={searchValue}
+        onChange={setSearchValue}
+        onSubmit={(v) => { setCommittedQuery(v); setSearchFocused(false); }}
+        suggestionsOpen={searchFocused && !searchValue}
+        onFocus={() => setSearchFocused(true)}
+        onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+        suggestions={SUGGESTED_QUERIES}
+        onPickSuggestion={(s) => { setSearchValue(s); setCommittedQuery(s); setSearchFocused(false); }}
+        onClear={() => { setSearchValue(''); setCommittedQuery(''); }}
+        committedQuery={committedQuery}
+        matches={totalMatches}
+      />
+
+      {selectedNode && !chatOpen && (
+        <PreviewPanel
+          node={selectedNode}
+          graph={graph}
+          surfaceLight={tweaks.surfaceLight}
+          onClose={() => setSelectedId(null)}
+          onPickNeighbor={(n) => setSelectedId(n.id)}
+        />
+      )}
+
+      <ChatPanel
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        projectRoot={projectRoot}
+        surfaceLight={tweaks.surfaceLight}
+      />
+
+      {overlay === 'indexing' && (
+        <IndexingOverlay
+          progress={indexingProgress}
+          fileCount={graph.nodes.length}
+          currentFile={currentFile}
+        />
+      )}
+
+      {overlay === 'onboarding' && (
+        <OnboardingOverlay
+          logoVariant={tweaks.logoVariant}
+          apiKeySet={!!apiKey}
+          onDropFolder={() => {
+            setOverlay(null);
+            runIndexingAnimation(graph);
+          }}
+        />
+      )}
+
+      {overlay === 'error' && (
+        <ErrorOverlay
+          message="Could not reach the embeddings service."
+          onRetry={() => { setOverlay(null); runIndexingAnimation(graph); }}
+          onDismiss={() => setOverlay(null)}
+        />
+      )}
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection label="Identity" />
+        <TweakRadio label="Logo glyph" value={tweaks.logoVariant}
+                    options={['cloud', 'rings', 'cluster']}
+                    onChange={(v) => setTweak('logoVariant', v)} />
+
+        <TweakSection label="Atmosphere" />
+        <TweakSlider label="Star density" value={Math.round(tweaks.starDensity * 100)}
+                     min={0} max={100} unit="%"
+                     onChange={(v) => setTweak('starDensity', v / 100)} />
+        <TweakSlider label="Motion" value={tweaks.motion} min={0} max={100} unit="%"
+                     onChange={(v) => setTweak('motion', v)} />
+        <TweakToggle label="Lighter panels" value={tweaks.surfaceLight}
+                     onChange={(v) => setTweak('surfaceLight', v)} />
+
+        <TweakSection label="States" />
+        <TweakButton label="Replay indexing" onClick={() => runIndexingAnimation(graph)} />
+        <TweakButton label="Show onboarding" onClick={() => setOverlay('onboarding')} />
+        <TweakButton label="Show error state" onClick={() => setOverlay('error')} />
+      </TweaksPanel>
     </div>
+  );
+}
 
-    <div class="modal-backdrop hidden" id="modal-backdrop">
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <div class="modal-title" id="modal-title">New project</div>
-        <div class="modal-sub" id="modal-sub"></div>
-        <input type="text" id="modal-input" autocomplete="off" />
-        <div class="modal-row">
-          <button type="button" id="modal-cancel" class="btn-mini">Cancel</button>
-          <button type="button" id="modal-ok" class="btn-mini btn-primary">Add project</button>
-        </div>
-      </div>
-    </div>
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
 
-    <script src="main.js"></script>
-  </body>
+</body>
 </html>

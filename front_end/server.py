@@ -15,6 +15,7 @@ import re
 import sys
 import uuid
 from pathlib import Path
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Bootstrap: load .env, then put backend/ on sys.path so its imports resolve.
@@ -542,6 +543,41 @@ def file_preview(rel_path: str = Query(..., min_length=1)):
     }
 
 
+class FileOpenBody(BaseModel):
+    rel_path: str = Field(..., min_length=1)
+
+
+@app.post("/api/file/open")
+def file_open(body: FileOpenBody):
+    """Open a file in the OS-default application."""
+    import subprocess
+    import sys as _sys
+
+    raw = body.rel_path.strip()
+    if os.path.isabs(raw):
+        p = Path(raw).expanduser().resolve()
+    else:
+        p = _safe_resolve_under_roots(raw)
+    if not p.exists():
+        fallback = _find_file_by_name(Path(raw).name)
+        if fallback is None:
+            raise HTTPException(status_code=404, detail="File not found")
+        p = fallback
+    if not _path_allowed(p) and not p.is_absolute():
+        raise HTTPException(status_code=403, detail="Path outside allowed roots")
+
+    try:
+        if _sys.platform == "darwin":
+            subprocess.Popen(["open", str(p)])
+        elif _sys.platform.startswith("win"):
+            os.startfile(str(p))  # type: ignore[attr-defined]
+        else:
+            subprocess.Popen(["xdg-open", str(p)])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to open: {e}") from e
+    return {"ok": True, "path": str(p)}
+
+
 # ---------------------------------------------------------------------------
 # Semantic search HTTP endpoints (direct access, independent of chat)
 # ---------------------------------------------------------------------------
@@ -582,23 +618,11 @@ def semantic_search(
     fetch_k = k * 5 if pid else k
     fetch_k = min(max(fetch_k, k), 100)
     try:
-        results = similarity_search_with_score(q, k=fetch_k)
+        results = similarity_search_with_score(q, k=fetch_k, project_id=pid)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
-    if pid:
-        try:
-            from pymongo import MongoClient
-            uri = os.environ.get("MONGO_URI", "")
-            if uri:
-                coll = MongoClient(uri)["nebula"]["files"]
-                ids = [d.get("_id") for d, _ in results if d.get("_id")]
-                if ids:
-                    keep = {d["_id"] for d in coll.find({"_id": {"$in": ids}, "project_id": pid}, {"_id": 1})}
-                    results = [(d, s) for d, s in results if d.get("_id") in keep]
-        except Exception:
-            pass
-        results = results[:k]
+    results = results[:k]
 
     filtered = _filter_by_score_gap(results, min_score=min_score)
 
@@ -639,8 +663,20 @@ def semantic_index(body: SemanticIndexBody):
 
 
 _INDEX_EXTENSIONS = frozenset(
-    {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".md", ".webp", ".gif"}
+    {
+        ".pdf", ".png", ".jpg", ".jpeg", ".txt", ".md", ".webp", ".gif",
+        ".py", ".pyi", ".ipynb", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts",
+        ".html", ".css", ".rs", ".c", ".cpp", ".h", ".hpp", ".java", ".go", ".sh", ".rb", ".php",
+        ".swift", ".kt", ".kts", ".dart", ".json", ".yaml", ".yml", ".toml", ".sql", ".mdx",
+        ".gradle", ".maven", ".xml"
+    }
 )
+
+_IGNORE_DIRS = {
+    ".git", "node_modules", "venv", ".venv", "__pycache__",
+    "target", "dist", "build", "demo_repo", ".next", ".tauri",
+    "node_modules", ".DS_Store", "scratch"
+}
 
 
 class IndexDirectoryBody(BaseModel):
@@ -671,9 +707,10 @@ def semantic_index_directory(body: IndexDirectoryBody):
     scanned_files = 0
     errors: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root, topdown=True):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        # Prune hidden and ignored directories
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _IGNORE_DIRS]
         for name in filenames:
-            if name.startswith("."):
+            if name.startswith(".") or name in _IGNORE_DIRS:
                 continue
             scanned_files += 1
             suf = Path(name).suffix.lower()
@@ -766,9 +803,10 @@ def index_stream(
         from bson.objectid import ObjectId as _OID
         files: list[Path] = []
         for dirpath, dirnames, filenames in os.walk(root, topdown=True):
-            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            # Prune hidden and ignored directories
+            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _IGNORE_DIRS]
             for name in filenames:
-                if name.startswith("."):
+                if name.startswith(".") or name in _IGNORE_DIRS:
                     continue
                 if Path(name).suffix.lower() not in _INDEX_EXTENSIONS:
                     continue

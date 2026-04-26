@@ -43,6 +43,12 @@ def process_and_embed_file(file_path, description=None):
 
     mime_type = magic.from_file(file_path, mime=True)
 
+    # Auto-generate description for images if none provided (improves text-to-image search)
+    if not description and mime_type.startswith("image/"):
+        name_no_ext = os.path.splitext(file_name)[0]
+        description = name_no_ext.replace("_", " ").replace("-", " ")
+        print(f"Auto-generated description for {file_name}: {description}")
+
     embedding = get_multimodal_embedding(file_path, description)
     if embedding is None:
         print("Error: No embedding produced; not inserting.")

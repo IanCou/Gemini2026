@@ -19,12 +19,31 @@ def get_multimodal_embedding(file_path, description=None, task_type="RETRIEVAL_D
 
     # Gemini's embed_content rejects text/* via Part.from_bytes — it wants the text in
     # the text field. Read text-like files as a string and append directly.
-    is_text = mime_type.startswith("text/") or mime_type in {
-        "application/json", "application/xml", "application/x-yaml",
-        "application/x-sh", "application/javascript",
-    }
+    is_text = (
+        mime_type.startswith("text/") or 
+        mime_type in {
+            "application/json", "application/xml", "application/x-yaml",
+            "application/x-sh", "application/javascript", "application/typescript",
+            "application/x-httpd-php", "application/sql", "application/toml",
+            "application/wasm", "application/x-perl", "application/x-ruby",
+            "application/x-swift", "application/x-kotlin", "application/x-python",
+            "application/x-rust", "application/x-go",
+        }
+    )
     try:
-        if is_text:
+        if mime_type.startswith("image/"):
+            # Multimodal embeddings for text+image often have lower text-to-mixed similarity
+            # than text-to-text. Embedding the description as pure text ensures it ranks high.
+            if description:
+                content_parts = [description]
+                print(f"Prepared {mime_type} as pure text description for embedding: {os.path.basename(file_path)}")
+            else:
+                with open(file_path, "rb") as f:
+                    file_bytes = f.read()
+                file_part = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
+                content_parts = [file_part]
+                print(f"Prepared {mime_type} for direct embedding (no description): {os.path.basename(file_path)}")
+        elif is_text:
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     text = f.read()[:10000]

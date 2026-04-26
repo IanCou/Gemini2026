@@ -1,0 +1,19 @@
+.env
+.env.local
+front_end/.env
+front_end/desktop/.env
+.DS_Store
+**/__pycache__/
+*.pyc
+
+# Python virtualenvs
+venv/
+.venv/
+
+# Node / Tauri build artifacts
+node_modules/
+front_end/desktop/src-tauri/target/
+front_end/desktop/dist/
+
+# Local smoke-test sandbox
+demo_repo/

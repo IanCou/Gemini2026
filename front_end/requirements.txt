@@ -10,3 +10,4 @@ python-magic
 python-dotenv>=1.0
 send2trash
 numpy>=1.26
+pymupdf>=1.24

@@ -192,9 +192,10 @@ async function openInDefaultApp(relPath) {
   }
 }
 
-function streamIndexProject(projectId, onEvent) {
+function streamIndexProject(projectId, onEvent, force = false) {
   const params = new URLSearchParams();
   if (projectId) params.set('project', projectId);
+  if (force) params.set('force', 'true');
   const url = `${BASE}/api/index/stream${params.toString() ? '?' + params.toString() : ''}`;
   const es = new EventSource(url);
   es.addEventListener('start',  ev => onEvent('start',  JSON.parse(ev.data)));

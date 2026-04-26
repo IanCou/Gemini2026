@@ -182,7 +182,7 @@ function App() {
   }, [graph]);
 
   // ─── real SSE indexing ────────────────────────────────────────────────────
-  const startIndexing = React.useCallback((pid) => {
+  const startIndexing = React.useCallback((pid, force = false) => {
     if (!pid) return;
     clearTimeout(pipelineHideTimer.current);
     setPipeline(EMPTY_PIPELINE);
@@ -214,7 +214,7 @@ function App() {
       } else if (type === 'error') {
         pipelineHideTimer.current = setTimeout(() => setPipelineVisible(false), 3000);
       }
-    });
+    }, force);
   }, []);
 
   // ─── save API key to .env via backend ────────────────────────────────────
@@ -453,7 +453,7 @@ function App() {
       <SettingsButton
         apiKey={apiKey}
         onApiKeyChange={handleApiKeyChange}
-        onReindex={() => startIndexing(projectRoot)}
+        onReindex={() => startIndexing(projectRoot, true)}
       />
 
       {hoverNode && hoverPos && hoverNode.id !== selectedId && (
@@ -567,7 +567,7 @@ function App() {
                      onChange={(v) => setTweak('surfaceLight', v)} />
 
         <TweakSection label="States" />
-        <TweakButton label="Re-index project" onClick={() => startIndexing(projectRoot)} />
+        <TweakButton label="Re-index project" onClick={() => startIndexing(projectRoot, true)} />
         <TweakButton label="Show onboarding" onClick={() => setOverlay('onboarding')} />
         <TweakButton label="Show error state" onClick={() => setOverlay('error')} />
       </TweaksPanel>

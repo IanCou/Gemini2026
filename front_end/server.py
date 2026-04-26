@@ -754,6 +754,7 @@ def _sse(event: str, data: dict) -> str:
 def index_stream(
     rel_path: str = Query(default="", description="Optional folder; defaults to project root"),
     project: str = Query(default="", description="Project id; tags every doc with project_id and uses its root"),
+    force: bool = Query(default=False, description="Re-embed even files whose hash hasn't changed"),
 ):
     """Index a directory, streaming per-file pipeline stages as SSE events.
 
@@ -801,6 +802,7 @@ def index_stream(
     def gen():
         from add_element import ingest_file_to_db as _ingest, collection as _coll
         from bson.objectid import ObjectId as _OID
+        _force = force
         files: list[Path] = []
         for dirpath, dirnames, filenames in os.walk(root, topdown=True):
             # Prune hidden and ignored directories
@@ -819,7 +821,7 @@ def index_stream(
             yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "loaded"})
             try:
                 yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "embed"})
-                oid = _ingest(str(fp), None)
+                oid = _ingest(str(fp), None, force=_force)
                 if oid is None:
                     yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "error", "error": "embed_failed"})
                     continue

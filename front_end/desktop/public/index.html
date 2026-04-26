@@ -64,7 +64,7 @@ function App() {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
 
   // ─── core state ──────────────────────────────────────────────────────────
-  const [graph, setGraph] = React.useState(() => buildGraph('webapp'));
+  const [graph, setGraph] = React.useState(() => ({ nodes: [], edges: [], project: { name: 'Workspace', description: '' } }));
   const [selectedId, setSelectedId] = React.useState(null);
   const [hoverNode, setHoverNode] = React.useState(null);
   const [hoverPos, setHoverPos] = React.useState(null);
@@ -97,9 +97,11 @@ function App() {
       setProjects(ps);
       if (ps.length > 0) {
         setProjectRoot(ps[0].root || ps[0].id || null);
+      } else {
+        setOverlay('onboarding');
       }
     }).catch(() => {
-      // Backend not running — use demo data
+      setOverlay('onboarding');
     });
   }, []);
 
@@ -107,14 +109,10 @@ function App() {
   React.useEffect(() => {
     const load = async () => {
       let g;
-      if (projectRoot) {
-        try {
-          g = await buildGraphFromBackend(projectRoot);
-        } catch {
-          g = buildGraph('webapp');
-        }
-      } else {
-        g = buildGraph('webapp');
+      try {
+        g = await buildGraphFromBackend(projectRoot || '');
+      } catch {
+        g = { nodes: [], edges: [], project: { name: 'Workspace', description: '' } };
       }
       setGraph(g);
       setSelectedId(null);
@@ -150,9 +148,6 @@ function App() {
     };
     requestAnimationFrame(step);
   }, []);
-
-  // Run indexing once on mount
-  React.useEffect(() => { runIndexingAnimation(graph); /* eslint-disable-next-line */ }, []);
 
   // ─── search ───────────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -298,20 +293,15 @@ function App() {
 
   const selectedNode = selectedId != null ? graph.nodes[selectedId] : null;
 
-  // Build allProjects map for the header switcher
   const allProjectsMap = React.useMemo(() => {
     const m = {};
-    if (projects.length > 0) {
-      projects.forEach(p => {
-        m[p.root || p.id] = { name: p.name, description: `${p.count || 0} files` };
-      });
-    } else {
-      Object.entries(PROJECTS).forEach(([k, v]) => { m[k] = { name: v.name, description: v.description }; });
-    }
+    projects.forEach(p => {
+      m[p.root || p.id] = { name: p.name, description: `${p.count || 0} files` };
+    });
     return m;
   }, [projects]);
 
-  const currentProjectKey = projectRoot || (projects.length > 0 ? (projects[0].root || projects[0].id) : 'webapp');
+  const currentProjectKey = projectRoot || (projects.length > 0 ? (projects[0].root || projects[0].id) : '');
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#0a0a0f' }}>
@@ -405,9 +395,26 @@ function App() {
         <OnboardingOverlay
           logoVariant={tweaks.logoVariant}
           apiKeySet={!!apiKey}
-          onDropFolder={() => {
+          onDropFolder={async () => {
             setOverlay(null);
-            runIndexingAnimation(graph);
+            try {
+              const BASE = 'http://127.0.0.1:8765';
+              const folderRes = await fetch(`${BASE}/api/dialog/pick_folder`);
+              const { path } = await folderRes.json();
+              if (!path) return;
+              const name = path.replace(/\\/g, '/').split('/').filter(Boolean).pop() || path;
+              const createRes = await fetch(`${BASE}/api/projects`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, root: path }),
+              });
+              const proj = await createRes.json();
+              const ps = await fetchProjects();
+              setProjects(ps);
+              setProjectRoot(proj.root || proj.id);
+            } catch {
+              setOverlay('error');
+            }
           }}
         />
       )}

@@ -344,7 +344,7 @@ const SettingsButton = ({ apiKey, onApiKeyChange, onReindex }) => {
 };
 
 // ─── Search bar ───────────────────────────────────────────────────────────
-const SUGGESTED_QUERIES = ['authentication', 'billing', 'styling', 'config', 'tests', 'documentation', 'icons'];
+const SUGGESTED_QUERIES = ['recent changes', 'configuration', 'documentation', 'tests', 'utilities', 'data models', 'scripts'];
 
 // ─── Top-3 search results, shown above the SearchBar after a commit ──────
 const TopResults = ({ results, mimeColors, onPick, onPickCluster }) => {
@@ -648,11 +648,15 @@ const PreviewPanel = ({ node, graph, onClose, onPickNeighbor, surfaceLight }) =>
     return arr;
   }, [node, graph]);
 
-  const [preview, setPreview] = React.useState(() => window.generatePreview(node));
+  const [preview, setPreview] = React.useState('Loading…');
   React.useEffect(() => {
-    setPreview(window.generatePreview(node));
+    setPreview('Loading…');
     if (window.fetchFilePreview) {
-      window.fetchFilePreview(node.path).then(text => { if (text) setPreview(text); }).catch(() => {});
+      window.fetchFilePreview(node.path)
+        .then(text => setPreview(text || '(no preview available)'))
+        .catch(() => setPreview('(preview unavailable)'));
+    } else {
+      setPreview('(preview unavailable)');
     }
   }, [node]);
 

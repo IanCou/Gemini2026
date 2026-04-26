@@ -143,7 +143,7 @@ def _find_sources_for_hint(hint: str) -> list[Path]:
     2. Case-insensitive basename match.
     3. Case-insensitive stem match (``image`` -> ``photo/image.png``).
     4. Fuzzy match on name, stem, and relative path (natural phrases like
-       “hacker guide” -> ``YHack26 Hacker Guide.pdf``).
+       “hacker guide” -> ``Nebula26 Hacker Guide.pdf``).
 
     When fuzzy matching, if several paths score within ``_FUZZY_AMBIGUITY_GAP`` of
     the best score, all are returned so the caller can ask for disambiguation.
@@ -217,7 +217,7 @@ def rename_file(source_path: str, destination_path: str) -> str:
 
     ``source_path`` may be a natural description: exact basename, stem (``image``
     -> ``image.png``), or a loose phrase that closely matches the file name
-    (e.g. ``hacker guide pdf`` -> ``YHack26 Hacker Guide.pdf``). If several paths
+    (e.g. ``hacker guide pdf`` -> ``Nebula26 Hacker Guide.pdf``). If several paths
     match, the tool lists them so the user can narrow the hint.
 
     ``destination_path`` may use subfolders; missing parent directories are created.

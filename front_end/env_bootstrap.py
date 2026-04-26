@@ -34,8 +34,8 @@ def load_project_env() -> None:
         if val is not None and not str(val).strip():
             del os.environ[key]
 
-    # YHACK_ROOT is a friendly alias for YHACKS_FS_ROOT (agent + preview roots).
-    yroot = (os.environ.get("YHACK_ROOT") or "").strip()
+    # NEBULA_ROOT is a friendly alias for NEBULA_FS_ROOT (agent + preview roots).
+    yroot = (os.environ.get("NEBULA_ROOT") or "").strip()
     if yroot:
         p = Path(yroot).expanduser()
         if p.is_absolute():
@@ -49,6 +49,6 @@ def load_project_env() -> None:
                     resolved = str(cand)
                     break
             fs = resolved or str((Path.cwd() / yroot).resolve())
-        os.environ["YHACKS_FS_ROOT"] = fs
+        os.environ["NEBULA_FS_ROOT"] = fs
         if not (os.environ.get("COPPERGOLEM_EXTRA_ROOTS") or "").strip():
             os.environ["COPPERGOLEM_EXTRA_ROOTS"] = fs

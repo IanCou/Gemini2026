@@ -1,4 +1,4 @@
-// Sift desktop UI — chat + canvas + SSE pipeline + activity feed + projects.
+// Nebula desktop UI — chat + canvas + SSE pipeline + activity feed + projects.
 const API = "http://127.0.0.1:8765";
 
 let sessionId = localStorage.getItem("session_id") || "";
@@ -323,7 +323,7 @@ function drawWaterfall(w, h) {
   const pad = 24, hits = waterfallHits;
   if (!hits.length) {
     ctx.font = "12px ui-monospace, monospace"; ctx.fillStyle = "rgba(156,163,175,0.6)";
-    ctx.fillText("No search yet — ask Sift to find something.", pad, h/2);
+    ctx.fillText("No search yet — ask Nebula to find something.", pad, h/2);
     return;
   }
   const barH = Math.min(28, (h - 2*pad) / hits.length - 4);
@@ -530,5 +530,5 @@ refreshHealth();
 refreshProjects().then(() => { refreshStats(); refreshProjection(); });
 setInterval(refreshHealth, 10000);
 setInterval(refreshStats, 8000);
-addFeed(`<span class="hl">●</span> Sift desktop ready · API ${API}`);
-addMsg("agent", "Hi — I'm Sift. Click ＋ in the Projects sidebar to add a folder, then ⟳ Index project to embed it. Ask me to find anything semantically afterward.");
+addFeed(`<span class="hl">●</span> Nebula desktop ready · API ${API}`);
+addMsg("agent", "Hi — I'm Nebula. Click ＋ in the Projects sidebar to add a folder, then ⟳ Index project to embed it. Ask me to find anything semantically afterward.");

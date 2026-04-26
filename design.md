@@ -1,4 +1,4 @@
-# Sift — Multimodal Semantic Codebase Engine
+# Nebula — Multimodal Semantic Codebase Engine
 **Desktop App Design Specification (macOS + Windows)**
 *Hackathon Track: Developer Tools*
 
@@ -8,7 +8,7 @@
 
 > Modern AI coding agents are **pixel-blind**. They navigate codebases with `grep` and `find`, which fail the moment a screenshot is named `IMG_9921.png`, a flowchart lives in `whiteboard_v3.pdf`, or the user asks "where's the auth diagram?"
 >
-> **Sift** is a desktop app that gives every coding agent — Antigravity, Cursor, Aider, Claude Code — a multimodal semantic memory of your repo. It indexes code, PDFs, and **images** with Google's multimodal Gemini embeddings, stores them in MongoDB Atlas Vector Search, and exposes the search to agents over a tiny local HTTP API. The user gets a slick **always-on-top chat window** with **live visualizations** of the embedding space, the indexing pipeline, and the agent's tool calls.
+> **Nebula** is a desktop app that gives every coding agent — Antigravity, Cursor, Aider, Claude Code — a multimodal semantic memory of your repo. It indexes code, PDFs, and **images** with Google's multimodal Gemini embeddings, stores them in MongoDB Atlas Vector Search, and exposes the search to agents over a tiny local HTTP API. The user gets a slick **always-on-top chat window** with **live visualizations** of the embedding space, the indexing pipeline, and the agent's tool calls.
 >
 > One install (.dmg or .msi). Zero config in the target repo. Your AI coworker can finally see.
 
@@ -16,13 +16,13 @@
 
 ## 2. Why This Wins the Dev-Tool Track
 
-Judges in this track reward three things, and Sift hits all three:
+Judges in this track reward three things, and Nebula hits all three:
 
-| Criterion | Sift's answer |
+| Criterion | Nebula's answer |
 |---|---|
 | **Real, common pain** | Every agent demo today does `grep -r 'TODO'`. That breaks on PDFs, images, and intent-based queries. Universal pain. |
 | **A unique, demoable wow moment** | "Find the architecture diagram" → agent finds `IMG_9921.png` *by what's drawn on the whiteboard*. Pixel-level recall, on stage, in 3 seconds. |
-| **Composable with the rest of the ecosystem** | Sift doesn't replace anyone. It augments Antigravity / Cursor / Aider via a 1-file rules drop-in and a localhost API. |
+| **Composable with the rest of the ecosystem** | Nebula doesn't replace anyone. It augments Antigravity / Cursor / Aider via a 1-file rules drop-in and a localhost API. |
 
 The desktop app is what makes it demoable: a tiny copper-colored window floats over the IDE, the user types in chat, and a constellation of file embeddings lights up in real time. That's the screenshot judges remember.
 
@@ -38,7 +38,7 @@ The whole app is one **Tauri 2** binary that bundles:
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│  Sift Desktop App  (Tauri 2 — single binary)                   │
+│  Nebula Desktop App  (Tauri 2 — single binary)                   │
 │                                                                │
 │   ┌────────────────────────────┐    ┌──────────────────────┐   │
 │   │  WebView (HTML/JS/CSS)     │◄──►│  Rust shell          │   │
@@ -76,7 +76,7 @@ The whole app is one **Tauri 2** binary that bundles:
 | Trash for `remove_file` | `send2trash` → `~/.Trash` (boot vol) or `.Trashes/$uid` (external). Restorable via `undo_last_action`. | `send2trash` → Recycle Bin via `SHFileOperation`. Restorable via `undo_last_action`. |
 | Always-on-top window | Native via Tauri | Native via Tauri |
 | File-drop into chat | Native via Tauri `onDrop` | Native via Tauri `onDrop` |
-| First-run config | Settings pane writes `~/Library/Application Support/Sift/.env` | Settings pane writes `%APPDATA%\Sift\.env` |
+| First-run config | Settings pane writes `~/Library/Application Support/Nebula/.env` | Settings pane writes `%APPDATA%\Nebula\.env` |
 | CI build | GitHub Actions: `macos-latest` (universal) + `windows-latest` |
 
 **Build matrix in CI** (`.github/workflows/release.yml`):
@@ -102,7 +102,7 @@ The chatbot is the centerpiece. It's a streaming LangGraph agent (Gemini 2.5 Fla
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Sift   [▽ workspace: ~/code/myapp]  ⚙   _  ☐  ✕   │  ← traffic-light bar
+│  Nebula   [▽ workspace: ~/code/myapp]  ⚙   _  ☐  ✕   │  ← traffic-light bar
 ├─────────────────────────────────────────────────────┤
 │                                                     │
 │  [user]  find the auth diagram                      │
@@ -134,8 +134,8 @@ The chatbot is the centerpiece. It's a streaming LangGraph agent (Gemini 2.5 Fla
 - **Score-gap filtering.** When `semantic_file_search` returns 10 results and the top 2 are 0.69 / 0.68 and the rest are 0.55 / 0.54 / …, the agent only surfaces the top 2 to the user, with a "show 8 weaker matches" expander. Implementation: `_filter_by_score_gap()` in `front_end/server.py`.
 - **Plan preview before destructive ops.** Any `move_file`, `remove_file`, or `remove_folder` is shown as a two-button card the user must click before execution. The agent system prompt enforces this; the UI also gates `dry_run=False` calls behind explicit user click.
 - **Undo button** in the header — calls `undo_last_action` on demand.
-- **Workspace switcher.** A dropdown in the header changes `YHACKS_FS_ROOT` per session, so one app instance can target multiple repos.
-- **Sessions persist across restarts.** Chat history serializes to `~/.sift/sessions/<id>.jsonl`; the app reopens the last active session.
+- **Workspace switcher.** A dropdown in the header changes `NEBULA_FS_ROOT` per session, so one app instance can target multiple repos.
+- **Sessions persist across restarts.** Chat history serializes to `~/.nebula/sessions/<id>.jsonl`; the app reopens the last active session.
 
 ### 4.3 Tool inventory (registered on the model)
 
@@ -171,7 +171,7 @@ A **2-D UMAP projection** of every indexed file's 768-dim embedding into screen 
 When the user types a query in the chat:
 
 1. The query embedding is computed on the server.
-2. The query is projected into the same UMAP space (using the persisted UMAP model — `umap-learn` saved to `~/.sift/umap.pkl`, retrained nightly or on `/index_directory` finish).
+2. The query is projected into the same UMAP space (using the persisted UMAP model — `umap-learn` saved to `~/.nebula/umap.pkl`, retrained nightly or on `/index_directory` finish).
 3. The query appears as a **pulsing white reticle** at its projected position.
 4. The k=5 nearest nodes light up; lines beam from the reticle to each, weighted by score.
 5. Hover any node for a thumbnail tooltip; click to open in the chat.
@@ -195,7 +195,7 @@ Powered by an SSE stream from `POST /api/semantic/index_directory` that emits `{
 
 When a `semantic_file_search` call resolves, a horizontal bar chart slides in below the results: bars sorted by score, with the **score-gap threshold** drawn as a dashed line — everything below the line is grayed out. Click a bar to scroll to that result.
 
-This is what teaches the user (and the judges) why Sift returned 2 instead of 10. It makes the score-gap heuristic *visible*.
+This is what teaches the user (and the judges) why Nebula returned 2 instead of 10. It makes the score-gap heuristic *visible*.
 
 ### 5.4 Activity Feed (always-on, bottom strip)
 
@@ -266,7 +266,7 @@ The engine layer is unchanged from the current implementation:
 
 ## 7. IDE Integration (the "augments everyone" angle)
 
-A one-click button in the header — **"Install rules in active workspace"** — drops a single file into the workspace root that retargets every popular agent at Sift's localhost API:
+A one-click button in the header — **"Install rules in active workspace"** — drops a single file into the workspace root that retargets every popular agent at Nebula's localhost API:
 
 ```
 .cursorrules
@@ -278,8 +278,8 @@ AGENTS.md
 The rules content:
 
 ```text
-You have access to a local semantic search engine called Sift, running on
-http://127.0.0.1:8765. Sift can see inside images and PDFs.
+You have access to a local semantic search engine called Nebula, running on
+http://127.0.0.1:8765. Nebula can see inside images and PDFs.
 
 When you need to find a file, locate a diagram, understand the architecture,
 or look for context, DO NOT use grep, find, or fuzzy file search first.
@@ -300,17 +300,17 @@ Judges who use Cursor / Antigravity recognize the file format instantly. The pit
 
 > *Goal: make the judges say "oh damn" within 30 seconds and "I'd install this" within 3 minutes.*
 
-**0:00 — Hook (15s).** Open the IDE side-by-side with Sift's hover window. Have an unindexed `demo_repo/` open with a screenshot named `IMG_9921.png` (a real whiteboard photo) and a few code files.
+**0:00 — Hook (15s).** Open the IDE side-by-side with Nebula's hover window. Have an unindexed `demo_repo/` open with a screenshot named `IMG_9921.png` (a real whiteboard photo) and a few code files.
 
 **0:15 — The flaw (20s).** Ask the IDE's built-in agent: *"Find the architecture diagram."* It does `grep -ri 'architecture'` and returns nothing. Pause. Say: "This is the pixel-blind problem."
 
-**0:35 — Index (30s).** Click "Index workspace" in Sift. The **Pipeline View** lights up. 87 files flow through `loaded → embed → atlas` in 25 seconds. Ambient music goes well here.
+**0:35 — Index (30s).** Click "Index workspace" in Nebula. The **Pipeline View** lights up. 87 files flow through `loaded → embed → atlas` in 25 seconds. Ambient music goes well here.
 
 **1:05 — Constellation (30s).** Auto-switch to the Constellation View. ~90 nodes appear, clustered by MIME color. Pan a bit. The audience now *sees* a brain.
 
 **1:35 — The wow (45s).** Type in chat: *"find the architecture diagram."* The white reticle lands inside the image cluster. A line beams to `IMG_9921.png` at 0.91. The result card renders the actual whiteboard photo. **Score Waterfall** confirms: top hit is far above the rest.
 
-**2:20 — The agent (30s).** Type: *"rename it to oauth_diagram.png and update the doc that imports it."* Sift previews a 2-step plan, you click confirm. Activity Feed scrolls. Done.
+**2:20 — The agent (30s).** Type: *"rename it to oauth_diagram.png and update the doc that imports it."* Nebula previews a 2-step plan, you click confirm. Activity Feed scrolls. Done.
 
 **2:50 — The plug (10s).** Click "Install rules in workspace." Show the dropped `.antigravity_rules` file. Say: "Now Antigravity, Cursor, Aider, and Claude Code all share this brain. One install. Cross-platform. Done."
 
@@ -332,9 +332,9 @@ The engine + FastAPI server + Tauri shell are already wired up. See [README.md](
 
 1. **Chat panel rewrite** — replace the current 72×72 hover bubble in [front_end/desktop/public/](front_end/desktop/public/) with a 480×720 chat-and-canvas layout. Vanilla JS + Tailwind via CDN; no build step.
 2. **SSE streaming** — add `/api/chat/stream` and `/api/index/stream` to [front_end/server.py](front_end/server.py).
-3. **Visualization layer** — Three.js + a UMAP projection job (`umap-learn`, runs on the sidecar) writing `~/.sift/umap.pkl`.
+3. **Visualization layer** — Three.js + a UMAP projection job (`umap-learn`, runs on the sidecar) writing `~/.nebula/umap.pkl`.
 4. **Windows packaging** — add `windows-latest` to the existing GitHub Actions matrix; ship `python-3.12-embed-amd64.zip` inside `front_end/desktop/src-tauri/resources/python/`. Update [front_end/desktop/src-tauri/src/backend.rs](front_end/desktop/src-tauri/src/backend.rs) to prefer `Resources/python/python.exe` when present, falling back to system `python3`.
-5. **Onboarding wizard** — a small modal in the WebView on first run; persists to `~/.sift/.env` (mac) or `%APPDATA%\Sift\.env` (Windows) via a Tauri command.
+5. **Onboarding wizard** — a small modal in the WebView on first run; persists to `~/.nebula/.env` (mac) or `%APPDATA%\Nebula\.env` (Windows) via a Tauri command.
 
 Each is a 60-90 minute slice. Four people × 9 hours covers all five with time for the demo rehearsal.
 

@@ -1,4 +1,4 @@
-# Session Progress: Sift App Launch
+# Session Progress: Nebula App Launch
 
 **Date**: 2026-04-26  
 **Model**: Claude Haiku 4.5  
@@ -6,7 +6,7 @@
 
 ## Summary
 
-Launched the Sift desktop app (Tauri on macOS). App built and running successfully with full UI.
+Launched the Nebula desktop app (Tauri on macOS). App built and running successfully with full UI.
 
 ## Actions Taken
 
@@ -27,7 +27,7 @@ Launched the Sift desktop app (Tauri on macOS). App built and running successful
 
 ## Current State
 
-- **App running**: Sift window open on macOS, fully interactive
+- **App running**: Nebula window open on macOS, fully interactive
 - **Frontend**: HTML/CSS/JS fully rendered, all modes available (Constellation, Pipeline, Scores)
 - **Backend**: FastAPI server running on port 8765, static server on 1420
 - **Database**: MongoDB Atlas connected (vector search configured)
@@ -60,7 +60,7 @@ This session continued from extensive prior work:
 - SSE-based streaming indexing pipeline
 - MongoDB document tagging with `project_id` for scoped searches
 - Path expansion (`~`) and absolute path support in file picker
-- Project persistence via `~/.sift/projects.json`
+- Project persistence via `~/.nebula/projects.json`
 - CSS Grid layout (168px sidebar + responsive main content)
 - Dark theme with copper accent (#f59e0b)
 

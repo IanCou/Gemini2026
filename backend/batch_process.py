@@ -2,7 +2,7 @@ import os
 import concurrent.futures
 from add_element import process_and_embed_file, bulk_upsert_documents
 
-TARGET_DIRECTORY = "/Users/william/yhacks_s26/test_directory"
+TARGET_DIRECTORY = "/Users/william/nebula_s26/test_directory"
 EXCLUDED_SUFFIXES = ('.mp4', '.zip', '.csv', '.tar.gz', '.min.js', 'package-lock.json')
 
 def process_directory(directory_path):

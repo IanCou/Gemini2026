@@ -1,7 +1,7 @@
 """
 FastAPI backend for the CopperGolem Tauri desktop UI.
 
-Wraps the existing yhacks_s26/backend/ agent and vector-search modules
+Wraps the existing nebula_s26/backend/ agent and vector-search modules
 without modifying them. Run from the front_end directory:
 
     python -m uvicorn server:app --host 127.0.0.1 --port 8765
@@ -82,7 +82,7 @@ app.add_middleware(
 def get_graph():
     global _graph
     if _graph is None:
-        os.environ.setdefault("YHACKS_FS_ROOT", str(_REPO_ROOT.resolve()))
+        os.environ.setdefault("NEBULA_FS_ROOT", str(_REPO_ROOT.resolve()))
         mod = _import_agent()
         _graph = mod.create_chat_app()
     return _graph
@@ -311,7 +311,7 @@ def agent_tools():
             tools_out.append({"name": getattr(t, "name", ""), "description": first_line})
         return {
             "tools": tools_out,
-            "fs_root": os.environ.get("YHACKS_FS_ROOT", "") or str(_REPO_ROOT.resolve()),
+            "fs_root": os.environ.get("NEBULA_FS_ROOT", "") or str(_REPO_ROOT.resolve()),
             "system_prompt": getattr(mod, "DEFAULT_AGENT_SYSTEM", ""),
         }
     except Exception:
@@ -322,7 +322,7 @@ def agent_tools():
                 {"name": "execute_plan", "description": "Execute a file-management plan (create, move, remove, index)"},
                 {"name": "undo_last_action", "description": "Undo the last executed plan"},
             ],
-            "fs_root": os.environ.get("YHACKS_FS_ROOT", "") or str(_REPO_ROOT.resolve()),
+            "fs_root": os.environ.get("NEBULA_FS_ROOT", "") or str(_REPO_ROOT.resolve()),
             "system_prompt": "",
         }
 
@@ -335,12 +335,12 @@ def chat(req: ChatRequest):
     if req.project_id:
         proj = _project_by_id(req.project_id)
         if proj:
-            os.environ["YHACKS_FS_ROOT"] = proj["root"]
-            os.environ["YHACKS_ACTIVE_PROJECT_ID"] = req.project_id
+            os.environ["NEBULA_FS_ROOT"] = proj["root"]
+            os.environ["NEBULA_ACTIVE_PROJECT_ID"] = req.project_id
         else:
-            os.environ.pop("YHACKS_ACTIVE_PROJECT_ID", None)
+            os.environ.pop("NEBULA_ACTIVE_PROJECT_ID", None)
     else:
-        os.environ.pop("YHACKS_ACTIVE_PROJECT_ID", None)
+        os.environ.pop("NEBULA_ACTIVE_PROJECT_ID", None)
 
     sid = req.session_id or str(uuid.uuid4())
     if sid not in _sessions:
@@ -591,7 +591,7 @@ def semantic_search(
             from pymongo import MongoClient
             uri = os.environ.get("MONGO_URI", "")
             if uri:
-                coll = MongoClient(uri)["yhacks"]["files"]
+                coll = MongoClient(uri)["nebula"]["files"]
                 ids = [d.get("_id") for d, _ in results if d.get("_id")]
                 if ids:
                     keep = {d["_id"] for d in coll.find({"_id": {"$in": ids}, "project_id": pid}, {"_id": 1})}
@@ -754,7 +754,7 @@ def index_stream(
             raise HTTPException(status_code=400, detail="rel_path required when no project is set")
         if os.path.isabs(s):
             # User-picked absolute paths (via Finder dialog or /index /abs) are allowed
-            # outside YHACKS_FS_ROOT — they're explicit; no chance of accidental escape.
+            # outside NEBULA_FS_ROOT — they're explicit; no chance of accidental escape.
             root = Path(s).expanduser().resolve()
         else:
             root = _safe_resolve_under_roots(s)
@@ -818,7 +818,7 @@ def projection(query: str | None = Query(default=None), project: str = Query(def
     uri = os.environ.get("MONGO_URI")
     if not uri:
         raise HTTPException(status_code=503, detail="MONGO_URI not set")
-    coll = MongoClient(uri)["yhacks"]["files"]
+    coll = MongoClient(uri)["nebula"]["files"]
     pid = project.strip() or None
     flt = {"project_id": pid} if pid else {}
     docs = list(coll.find(flt, {"filename": 1, "filepath": 1, "file_type": 1, "embedding": 1, "project_id": 1}))
@@ -861,8 +861,8 @@ def projection(query: str | None = Query(default=None), project: str = Query(def
 # ---------------------------------------------------------------------------
 
 
-_RULES_TEXT = """You have access to a local semantic search engine called Sift, running on
-http://127.0.0.1:8765. Sift can see inside images and PDFs.
+_RULES_TEXT = """You have access to a local semantic search engine called Nebula, running on
+http://127.0.0.1:8765. Nebula can see inside images and PDFs.
 
 When you need to find a file, locate a diagram, understand the architecture,
 or look for context, DO NOT use grep, find, or fuzzy file search first.
@@ -877,7 +877,7 @@ and `score`. Trust hits with score >= 0.65; ignore the rest. Open files via
 
 
 class InstallRulesBody(BaseModel):
-    rel_path: str = Field(default="", description="Workspace folder; defaults to project root or YHACKS_FS_ROOT")
+    rel_path: str = Field(default="", description="Workspace folder; defaults to project root or NEBULA_FS_ROOT")
     project: str = Field(default="", description="Project id; if set, drops rules into the project's root")
 
 
@@ -916,11 +916,11 @@ def install_rules(body: InstallRulesBody):
 
 
 # ---------------------------------------------------------------------------
-# Projects (Codex-style scoped workspaces, persisted to ~/.sift/projects.json)
+# Projects (Codex-style scoped workspaces, persisted to ~/.nebula/projects.json)
 # ---------------------------------------------------------------------------
 
 
-_PROJECTS_FILE = Path.home() / ".sift" / "projects.json"
+_PROJECTS_FILE = Path.home() / ".nebula" / "projects.json"
 
 
 def _load_projects() -> list[dict[str, Any]]:
@@ -955,7 +955,7 @@ def list_projects():
         from pymongo import MongoClient
         uri = os.environ.get("MONGO_URI", "")
         if uri:
-            coll = MongoClient(uri, serverSelectionTimeoutMS=3000)["yhacks"]["files"]
+            coll = MongoClient(uri, serverSelectionTimeoutMS=3000)["nebula"]["files"]
             for d in coll.aggregate([{"$group": {"_id": "$project_id", "n": {"$sum": 1}}}]):
                 counts[str(d["_id"])] = d["n"]
     except Exception:
@@ -998,7 +998,7 @@ def delete_project(pid: str, drop_data: bool = Query(default=False)):
             from pymongo import MongoClient
             uri = os.environ.get("MONGO_URI", "")
             if uri:
-                coll = MongoClient(uri)["yhacks"]["files"]
+                coll = MongoClient(uri)["nebula"]["files"]
                 deleted = coll.delete_many({"project_id": pid}).deleted_count
         except Exception:
             pass
@@ -1054,7 +1054,7 @@ def stats(project: str = Query(default="")):
         uri = os.environ.get("MONGO_URI", "")
         if not uri:
             return {"count": 0, "by_type": {}, "mongo": False}
-        coll = MongoClient(uri, serverSelectionTimeoutMS=3000)["yhacks"]["files"]
+        coll = MongoClient(uri, serverSelectionTimeoutMS=3000)["nebula"]["files"]
         pid = project.strip() or None
         flt = {"project_id": pid} if pid else {}
         n = coll.count_documents(flt)

@@ -1,4 +1,4 @@
-# Sift / CopperGolem
+# Nebula / CopperGolem
 
 Multimodal semantic file search and a chat-driven file organizer built on **Google Gemini** (multimodal embeddings + LLM), **MongoDB Atlas Vector Search**, **FastAPI**, and a **Tauri** desktop UI.
 
@@ -38,7 +38,7 @@ pip install -r front_end/requirements.txt send2trash
 export GEMINI_API_KEY='your-gemini-key'
 export MONGO_URI='mongodb+srv://USER:PASS@cluster.mongodb.net/?appName=...'
 # Optional: confine all agent file ops to one directory (default: cwd)
-export YHACKS_FS_ROOT="$(pwd)"
+export NEBULA_FS_ROOT="$(pwd)"
 ```
 
 You can also drop the same `KEY=VALUE` lines into a `.env` file at the repo root, in [front_end/](front_end/), or in [front_end/desktop/](front_end/desktop/) — [front_end/env_bootstrap.py](front_end/env_bootstrap.py) loads them via `python-dotenv` when the FastAPI server starts.
@@ -50,13 +50,13 @@ cd backend
 python create_vector_index.py
 ```
 
-Then in the **Atlas UI** → cluster → Database → `yhacks` → `files` → **Search Indexes**, wait until the index named **`vector_index`** shows status **READY** (can take a few minutes). The pipeline returns `[]` until then.
+Then in the **Atlas UI** → cluster → Database → `nebula` → `files` → **Search Indexes**, wait until the index named **`vector_index`** shows status **READY** (can take a few minutes). The pipeline returns `[]` until then.
 
 The index definition (also in [backend/create_vector_index.py](backend/create_vector_index.py)):
 
 | Field | Value |
 |---|---|
-| Database | `yhacks` |
+| Database | `nebula` |
 | Collection | `files` |
 | Index name | `vector_index` |
 | Vector path | `embedding` |
@@ -106,7 +106,7 @@ Tools registered on the model:
 | `execute_plan(plan_json, dry_run=False)` | Always shows the preview first, then runs each step. Records one undo batch. |
 | `undo_last_action()` | LIFO undo of the last `execute_plan` / `trash_file` batch. |
 
-**Plan JSON** is an array of step objects. Supported actions: `create_folder`, `move_file` (`from`, `to`, optional `mongo_id`), `remove_file` (`path` and/or `mongo_id`, sends to system Trash), `add_file` (`path`, optional `description`), `remove_folder` (Trash + delete DB rows under path; **not** undoable). All paths are confined to `YHACKS_FS_ROOT` (or cwd at startup).
+**Plan JSON** is an array of step objects. Supported actions: `create_folder`, `move_file` (`from`, `to`, optional `mongo_id`), `remove_file` (`path` and/or `mongo_id`, sends to system Trash), `add_file` (`path`, optional `description`), `remove_folder` (Trash + delete DB rows under path; **not** undoable). All paths are confined to `NEBULA_FS_ROOT` (or cwd at startup).
 
 Agent-specific environment:
 
@@ -114,7 +114,7 @@ Agent-specific environment:
 |---|---|---|
 | `GEMINI_API_KEY` | yes | — |
 | `MONGO_URI` | for `semantic_file_search` only | localhost (no vector index → empty results) |
-| `YHACKS_FS_ROOT` | no | cwd at process start |
+| `NEBULA_FS_ROOT` | no | cwd at process start |
 | `AGENT_MODEL` | no | `gemini-2.5-flash` |
 
 ---
@@ -152,7 +152,7 @@ Open `http://127.0.0.1:8765/docs` for the auto-generated OpenAPI UI.
 |---|---|---|
 | `COPPERGOLEM_NO_PARENT_ROOT` | unset | Set non-empty to **stop** the server from auto-allowing the repo's parent directory as a workspace root. |
 | `COPPERGOLEM_EXTRA_ROOTS` | unset | Extra workspace roots, separated by `|`, `;`, or `:`. Browse / preview / index_directory are confined to these roots + the repo (+ optional parent). |
-| `YHACK_ROOT` | unset | Friendly alias: if set, becomes `YHACKS_FS_ROOT` and (when `COPPERGOLEM_EXTRA_ROOTS` is empty) is also added to the workspace roots. Resolved against `~/Downloads`, cwd, and `front_end/` if not absolute. |
+| `NEBULA_ROOT` | unset | Friendly alias: if set, becomes `NEBULA_FS_ROOT` and (when `COPPERGOLEM_EXTRA_ROOTS` is empty) is also added to the workspace roots. Resolved against `~/Downloads`, cwd, and `front_end/` if not absolute. |
 
 ---
 
@@ -181,7 +181,7 @@ In a packaged build, [front_end/desktop/src-tauri/src/backend.rs](front_end/desk
 
 ## Stored document shape
 
-Every successful ingest inserts one document into `yhacks.files`:
+Every successful ingest inserts one document into `nebula.files`:
 
 ```json
 {
@@ -227,7 +227,7 @@ Vector indexes only **register** with `create_search_index` — the actual match
 | `similarity_search_with_score` always returns `[]` | Vector index not yet **READY** in Atlas, or `MONGO_URI` unset (PyMongo silently falls back to `localhost:27017`), or index name in Atlas ≠ `vector_index`. |
 | `ImportError: failed to find libmagic` | `brew install libmagic` (macOS) / `apt install libmagic1` (Debian). |
 | `Set GEMINI_API_KEY in the environment before running the agent.` | Export it, or put it in a `.env` next to `server.py` / repo root. |
-| `Plan preview` fails with "Path must be under project root" | The plan referenced a path outside `YHACKS_FS_ROOT`. Either change the path or set `YHACKS_FS_ROOT` to a parent. |
+| `Plan preview` fails with "Path must be under project root" | The plan referenced a path outside `NEBULA_FS_ROOT`. Either change the path or set `NEBULA_FS_ROOT` to a parent. |
 | Tauri dev window starts but chat 500s | FastAPI couldn't reach Mongo or import the agent — check the uvicorn output and `/health`. |
 | `ask_about_files` fails on large PDFs | In-code cap is 100 MiB/file; Gemini also enforces its own request/token caps. Split or use the File API for huge inputs. |
 | Agent trash/remove returns "send2trash is not installed" | `pip install send2trash` (already in the setup step above). |
@@ -251,7 +251,7 @@ Vector indexes only **register** with `create_search_index` — the actual match
 │   └── agent.py                   # LangGraph REPL + tools
 ├── front_end/
 │   ├── requirements.txt           # Python deps for backend + server + agent
-│   ├── env_bootstrap.py           # loads .env files, normalizes YHACK_ROOT
+│   ├── env_bootstrap.py           # loads .env files, normalizes NEBULA_ROOT
 │   ├── server.py                  # FastAPI app
 │   └── desktop/                   # Tauri shell (Node + Rust)
 │       ├── package.json
@@ -260,6 +260,6 @@ Vector indexes only **register** with `create_search_index` — the actual match
 │       └── src-tauri/             # Rust glue + tauri.conf.json
 ├── other_files/
 │   └── fake_agent.py              # standalone reference agent (not wired into the app)
-├── design.md                      # original Sift design spec
+├── design.md                      # original Nebula design spec
 └── README.md
 ```

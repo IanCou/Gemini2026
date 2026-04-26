@@ -8,7 +8,7 @@ from input_to_embedding import get_query_embedding
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI")
-DB_NAME = "yhacks"
+DB_NAME = "nebula"
 COLLECTION_NAME = "files"
 VECTOR_INDEX_NAME = "vector_index"
 EXPECTED_EMBEDDING_DIMS = 768

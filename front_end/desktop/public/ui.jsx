@@ -1448,15 +1448,27 @@ const ChatPanel = ({ open, onClose, projectRoot, surfaceLight, onAgentResult, on
             {msg.hits && msg.hits.length > 0 && (
               <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: '88%' }}>
                 {msg.hits.slice(0, 5).map((h, hi) => {
-                  const mimeColor = window.MIME_COLORS[h.file_type] || '#8a5cc0';
+                  const fullPath = String(h || '');
+                  const name = fullPath.split(/[\\/]/).pop() || fullPath;
+                  const ext = (name.split('.').pop() || '').toLowerCase();
+                  const CODE = ['ts','tsx','js','jsx','py','go','rs','java','c','cpp','cs','rb','php','swift','kt'];
+                  const DOC = ['md','mdx','txt','rst','pdf','tex'];
+                  const IMG = ['png','jpg','jpeg','gif','svg','webp','ico','bmp'];
+                  const CFG = ['json','yaml','yml','toml','ini','env','cfg','conf','lock','xml'];
+                  const kind = CODE.includes(ext) ? 'code'
+                    : DOC.includes(ext) ? 'doc'
+                    : IMG.includes(ext) ? 'image'
+                    : CFG.includes(ext) ? 'config'
+                    : 'misc';
+                  const mimeColor = window.MIME_COLORS[kind] || '#8a5cc0';
                   return (
                     <span key={hi} style={{
                       fontSize: 10, padding: '2px 7px', borderRadius: 4,
                       background: `${mimeColor}20`, border: `0.5px solid ${mimeColor}50`,
                       color: mimeColor, fontFamily: 'JetBrains Mono, monospace',
                       cursor: 'default',
-                    }} title={h.filepath}>
-                      {h.filename}
+                    }} title={fullPath}>
+                      {name}
                     </span>
                   );
                 })}

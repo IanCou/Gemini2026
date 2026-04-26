@@ -6,45 +6,72 @@ from google.api_core import exceptions
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+_TEXT_MIMES = {
+    "application/json", "application/xml", "application/x-yaml",
+    "application/x-sh", "application/javascript", "application/typescript",
+    "application/x-httpd-php", "application/sql", "application/toml",
+    "application/wasm", "application/x-perl", "application/x-ruby",
+    "application/x-swift", "application/x-kotlin", "application/x-python",
+    "application/x-rust", "application/x-go",
+}
+
+
 def get_multimodal_embedding(file_path, description=None, task_type="RETRIEVAL_DOCUMENT"):
     """
-    Sends raw file bytes (PDF, Image, Text) directly to Gemini 2 
-    without manual extraction.
+    Embed a file for semantic search.
+
+    Images and PDFs: ``description`` should carry the semantic content (AI caption
+    for images, extracted text for PDFs) so the embedding lands in the same text
+    space as user queries. If description is absent, falls back to raw bytes
+    (search quality will be poor for cross-modal queries).
+
+    Text files: file content is read and embedded directly.
+    Other binaries: embedded as raw bytes, with description prepended if given.
     """
     mime_type = magic.from_file(file_path, mime=True)
-    content_parts = []
-    
-    if description:
-        content_parts.append(description)
+    is_text_mime = mime_type.startswith("text/") or mime_type in _TEXT_MIMES
 
-    # Gemini's embed_content rejects text/* via Part.from_bytes — it wants the text in
-    # the text field. Read text-like files as a string and append directly.
-    is_text = mime_type.startswith("text/") or mime_type in {
-        "application/json", "application/xml", "application/x-yaml",
-        "application/x-sh", "application/javascript",
-    }
     try:
-        if is_text:
+        if mime_type.startswith("image/"):
+            if description:
+                content_parts = [description]
+                print(f"Embedding {os.path.basename(file_path)} via AI caption")
+            else:
+                with open(file_path, "rb") as f:
+                    file_bytes = f.read()
+                content_parts = [types.Part.from_bytes(data=file_bytes, mime_type=mime_type)]
+                print(f"Embedding {os.path.basename(file_path)} as raw image bytes (no caption)")
+
+        elif mime_type == "application/pdf":
+            if description:
+                content_parts = [description]
+                print(f"Embedding {os.path.basename(file_path)} via extracted PDF text ({len(description)} chars)")
+            else:
+                with open(file_path, "rb") as f:
+                    file_bytes = f.read()
+                content_parts = [types.Part.from_bytes(data=file_bytes, mime_type=mime_type)]
+                print(f"Embedding {os.path.basename(file_path)} as raw PDF bytes (no text extracted)")
+
+        elif is_text_mime:
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     text = f.read()[:10000]
             except UnicodeDecodeError:
                 with open(file_path, "r", encoding="latin-1") as f:
                     text = f.read()[:10000]
-            content_parts.append(text)
-            print(f"Prepared {mime_type} as text for embedding: {os.path.basename(file_path)}")
+            content_parts = [text]
+            print(f"Embedding {os.path.basename(file_path)} as text ({mime_type})")
+
         else:
             with open(file_path, "rb") as f:
                 file_bytes = f.read()
-            file_part = types.Part.from_bytes(
-                data=file_bytes,
-                mime_type=mime_type
-            )
-            content_parts.append(file_part)
-            print(f"Prepared {mime_type} for direct embedding: {os.path.basename(file_path)}")
+            content_parts = [types.Part.from_bytes(data=file_bytes, mime_type=mime_type)]
+            if description:
+                content_parts.insert(0, description)
+            print(f"Embedding {os.path.basename(file_path)} as binary ({mime_type})")
 
     except Exception as e:
-        print(f"Error reading file: {e}")
+        print(f"Error reading file {file_path}: {e}")
         return None
 
     try:
@@ -53,29 +80,28 @@ def get_multimodal_embedding(file_path, description=None, task_type="RETRIEVAL_D
             contents=content_parts,
             config={
                 'task_type': task_type,
-                'output_dimensionality': 768
-            }
+                'output_dimensionality': 768,
+            },
         )
         return res.embeddings[0].values
     except exceptions.InvalidArgument as e:
-        print(f"Validation Error: Ensure the model supports {mime_type}. Error: {e}")
+        print(f"Validation Error ({mime_type}): {e}")
         return None
     except Exception as e:
-        print(f"General Error: {e}")
+        print(f"Embedding error: {e}")
         return None
 
+
 def get_query_embedding(query_text):
-    """
-    Converts a query to a vector.
-    """
+    """Convert a query string to a 768-d vector for semantic search."""
     try:
         res = client.models.embed_content(
             model="gemini-embedding-2-preview",
             contents=query_text,
             config={
                 'task_type': 'RETRIEVAL_QUERY',
-                'output_dimensionality': 768
-            }
+                'output_dimensionality': 768,
+            },
         )
         return res.embeddings[0].values
     except Exception as e:

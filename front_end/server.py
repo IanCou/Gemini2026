@@ -821,12 +821,7 @@ def index_stream(
             yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "loaded"})
             try:
                 yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "embed"})
-                if _force:
-                    try:
-                        _coll.update_one({"filepath": str(fp)}, {"$unset": {"file_hash": ""}})
-                    except Exception:
-                        pass
-                oid = _ingest(str(fp), None)
+                oid = _ingest(str(fp), None, force=_force)
                 if oid is None:
                     yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "error", "error": "embed_failed"})
                     continue

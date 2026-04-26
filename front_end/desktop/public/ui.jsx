@@ -635,7 +635,6 @@ const PreviewPanel = ({ node, graph, onClose, onPickNeighbor, surfaceLight }) =>
         scored.set(e.a, Math.max(cur, e.similarity));
       }
     });
-    // Add cluster-mates
     graph.nodes.forEach(n => {
       if (n.id !== node.id && n.cluster === node.cluster && !scored.has(n.id)) {
         scored.set(n.id, 0.6);
@@ -643,21 +642,27 @@ const PreviewPanel = ({ node, graph, onClose, onPickNeighbor, surfaceLight }) =>
     });
     const arr = [...scored.entries()]
       .map(([id, sim]) => ({ node: graph.nodes[id], sim }))
+      .filter(x => x.node)
       .sort((a, b) => b.sim - a.sim)
       .slice(0, 5);
     return arr;
   }, [node, graph]);
 
-  const [preview, setPreview] = React.useState('Loading…');
+  // preview is a structured object: { kind, content, mime, name, path, size, message }
+  const [preview, setPreview] = React.useState({ kind: 'loading' });
   React.useEffect(() => {
-    setPreview('Loading…');
+    setPreview({ kind: 'loading' });
     if (window.fetchFilePreview) {
       window.fetchFilePreview(node.path)
-        .then(text => setPreview(text || '(no preview available)'))
-        .catch(() => setPreview('(preview unavailable)'));
+        .then(d => setPreview(d || { kind: 'error', message: 'No preview' }))
+        .catch(e => setPreview({ kind: 'error', message: String(e) }));
     } else {
-      setPreview('(preview unavailable)');
+      setPreview({ kind: 'error', message: 'Preview API unavailable' });
     }
+  }, [node]);
+
+  const handleOpenInApp = React.useCallback(() => {
+    if (window.openInDefaultApp) window.openInDefaultApp(node.path);
   }, [node]);
 
   const surfaceBg = surfaceLight ? '#22202e' : '#1a1826';
@@ -700,27 +705,47 @@ const PreviewPanel = ({ node, graph, onClose, onPickNeighbor, surfaceLight }) =>
             {node.path}
           </div>
         </div>
-        <button onClick={onClose} style={{
-          width: 26, height: 26, borderRadius: 6, padding: 0,
-          background: 'transparent', border: '0.5px solid #2e2a40',
-          color: '#c8c4d8', cursor: 'pointer', fontSize: 13, flexShrink: 0,
-        }}>✕</button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+          <button onClick={onClose} title="Close" style={{
+            width: 26, height: 26, borderRadius: 6, padding: 0,
+            background: 'transparent', border: '0.5px solid #2e2a40',
+            color: '#c8c4d8', cursor: 'pointer', fontSize: 13,
+          }}>✕</button>
+          <button onClick={handleOpenInApp} title="Open in default app" style={{
+            width: 26, height: 26, borderRadius: 6, padding: 0,
+            background: 'transparent', border: '0.5px solid #2e2a40',
+            color: '#c8c4d8', cursor: 'pointer', fontSize: 12,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(74,144,217,0.15)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M5 2H2.5A.5.5 0 002 2.5V11.5A.5.5 0 002.5 12H11.5A.5.5 0 0012 11.5V9M8 2h4v4M12 2L6 8" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Metadata strip */}
       <div style={{
-        padding: '10px 20px', display: 'flex', gap: 18,
+        padding: '10px 20px', display: 'flex', gap: 18, alignItems: 'center',
         fontSize: 10.5, color: '#6e6a82',
         fontFamily: 'JetBrains Mono, monospace',
         borderBottom: '0.5px solid #2e2a40',
       }}>
-        <div><span style={{ color: '#c8c4d8' }}>{(node.size * 8.4).toFixed(1)}</span> KB</div>
-        <div><span style={{ color: '#c8c4d8' }}>{Math.floor(node.size * 142)}</span> lines</div>
-        <div><span style={{ color: '#c8c4d8' }}>2d</span> ago</div>
+        {preview.size != null && (
+          <div><span style={{ color: '#c8c4d8' }}>{(preview.size / 1024).toFixed(1)}</span> KB</div>
+        )}
+        <div style={{ color: '#6e6a82' }}>{preview.kind === 'loading' ? '…' : preview.kind}</div>
+        <button onClick={handleOpenInApp} style={{
+          marginLeft: 'auto', fontSize: 10.5, color: '#4a90d9',
+          background: 'transparent', border: 0, padding: 0, cursor: 'pointer',
+          fontFamily: 'inherit', textDecoration: 'underline', textUnderlineOffset: 3,
+        }}>Open in default app</button>
       </div>
 
-      {/* Code preview — scrollable, with line numbers and find highlights */}
-      <ScrollableFileBody preview={preview} innerBg={innerBg} />
+      {/* Body — text / image / pdf / binary / error */}
+      <PreviewBody preview={preview} innerBg={innerBg} />
 
       {/* Nearest neighbors */}
       <div style={{
@@ -951,6 +976,100 @@ const ErrorOverlay = ({ message, onRetry, onDismiss }) => {
   );
 };
 
+// ─── Preview body — branches on preview.kind (text, image, pdf, binary, error) ──
+const PreviewBody = ({ preview, innerBg }) => {
+  const kind = preview?.kind;
+
+  if (kind === 'loading') {
+    return (
+      <div style={{
+        flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: innerBg, color: '#6e6a82', fontSize: 12,
+        fontFamily: 'JetBrains Mono, monospace',
+      }}>
+        Loading preview…
+      </div>
+    );
+  }
+
+  if (kind === 'image' && preview.content) {
+    const src = `data:${preview.mime || 'image/png'};base64,${preview.content}`;
+    return (
+      <div style={{
+        flex: 1, minHeight: 0, overflow: 'auto',
+        background: innerBg, padding: 16,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <img
+          src={src}
+          alt={preview.name || 'image preview'}
+          style={{
+            maxWidth: '100%', maxHeight: '100%',
+            objectFit: 'contain',
+            borderRadius: 6,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (kind === 'pdf' && preview.content) {
+    const src = `data:application/pdf;base64,${preview.content}`;
+    return (
+      <div style={{
+        flex: 1, minHeight: 0,
+        background: innerBg, position: 'relative',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        <object
+          data={src}
+          type="application/pdf"
+          style={{ width: '100%', flex: 1, border: 0 }}
+        >
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center',
+            color: '#6e6a82', fontSize: 12, fontFamily: 'JetBrains Mono, monospace',
+          }}>
+            <div style={{ fontSize: 28, opacity: 0.4 }}>📄</div>
+            <div style={{ color: '#c8c4d8' }}>{preview.name || 'PDF'}</div>
+            <div style={{ fontSize: 10.5 }}>
+              In-app PDF preview not supported by this WebView.
+              <br />Use “Open in default app” above.
+            </div>
+          </div>
+        </object>
+      </div>
+    );
+  }
+
+  if (kind === 'binary' || kind === 'error') {
+    return (
+      <div style={{
+        flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 12,
+        background: innerBg, color: '#6e6a82', fontSize: 12,
+        fontFamily: 'JetBrains Mono, monospace', padding: 24, textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 28, opacity: 0.4 }}>
+          {kind === 'binary' ? '⬚' : '⚠'}
+        </div>
+        <div style={{ color: '#c8c4d8' }}>
+          {kind === 'binary' ? 'Binary file' : 'Preview unavailable'}
+        </div>
+        <div style={{ fontSize: 10.5, maxWidth: 320 }}>
+          {preview.message || 'No preview available for this file.'}
+        </div>
+      </div>
+    );
+  }
+
+  // Text fallback (kind === 'text' or anything else with content)
+  const textContent = (kind === 'text' && preview.content) ? preview.content : (preview?.message || '(no preview available)');
+  return <ScrollableFileBody preview={textContent} innerBg={innerBg} />;
+};
+
 // ─── Scrollable file body with in-file find ──────────────────────────────
 const ScrollableFileBody = ({ preview, innerBg }) => {
   const [findOpen, setFindOpen] = React.useState(false);
@@ -1165,7 +1284,7 @@ const ScrollableFileBody = ({ preview, innerBg }) => {
 };
 
 // ─── Chat panel (slide-in drawer from right) ──────────────────────────────
-const ChatPanel = ({ open, onClose, projectRoot, surfaceLight }) => {
+const ChatPanel = ({ open, onClose, projectRoot, surfaceLight, onAgentResult, onAgentFsChange }) => {
   const [messages, setMessages] = React.useState([
     { role: 'agent', text: 'Ask me anything about your codebase — files, architecture, code patterns.' }
   ]);
@@ -1173,6 +1292,15 @@ const ChatPanel = ({ open, onClose, projectRoot, surfaceLight }) => {
   const [loading, setLoading] = React.useState(false);
   const [sessionId, setSessionId] = React.useState(null);
   const logRef = React.useRef(null);
+
+  // Reset session + clear messages whenever the active project changes.
+  React.useEffect(() => {
+    setSessionId(null);
+    setMessages([
+      { role: 'agent', text: 'Ask me anything about your codebase — files, architecture, code patterns.' }
+    ]);
+    setInput('');
+  }, [projectRoot]);
 
   const ensureSession = React.useCallback(async () => {
     if (sessionId) return sessionId;
@@ -1204,13 +1332,25 @@ const ChatPanel = ({ open, onClose, projectRoot, surfaceLight }) => {
       const d = await r.json();
       const reply = d.reply || '(no response)';
       const hits = d.found_files || [];
+      const tools = d.tools_used || [];
       setMessages(m => [...m, { role: 'agent', text: reply, hits }]);
+
+      // Surface the top file to the parent so it can populate the search bar
+      if (hits.length > 0 && onAgentResult) {
+        onAgentResult({ query: text, hits });
+      }
+      // If the agent ran a destructive / mutating tool (executed plan, trash),
+      // tell the parent to refresh the visualization.
+      const FS_TOOLS = new Set(['execute_plan', 'trash_file']);
+      if (tools.some(t => FS_TOOLS.has(t)) && onAgentFsChange) {
+        onAgentFsChange();
+      }
     } catch (e) {
       setMessages(m => [...m, { role: 'error', text: 'Connection error: ' + e.message }]);
     } finally {
       setLoading(false);
     }
-  }, [input, loading, ensureSession, projectRoot]);
+  }, [input, loading, ensureSession, projectRoot, onAgentResult, onAgentFsChange]);
 
   const surfaceBg = surfaceLight ? '#22202e' : '#1a1826';
   const innerBg = surfaceLight ? '#19171f' : '#12111a';

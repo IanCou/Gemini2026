@@ -31,7 +31,7 @@ const Constellation = ({
     scene.fog = new THREE.FogExp2(0x0a0a0f, 0.004);
 
     const camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 2000);
-    camera.position.set(0, 0, 180);
+    camera.position.set(0, 0, 130);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -46,7 +46,6 @@ const Constellation = ({
     const starCol = new Float32Array(STAR_MAX * 3);
     const STAR_PALETTE = [
       [0.75, 0.6, 0.23],   // amber
-      [0.75, 0.31, 0.29],  // coral
       [0.29, 0.43, 0.75],  // cobalt
       [0.29, 0.55, 0.36],  // sage
       [0.54, 0.36, 0.75],  // soft violet
@@ -172,10 +171,9 @@ const Constellation = ({
 
     const distantCloudGroup = new THREE.Group();
     const CLOUD_PRESETS = [
-      { color: 0xe8524a, pos: [-380,  120, -460], scale: 360, op: 0.32 }, // coral nebula
       { color: 0x4a90d9, pos: [ 420,  -90, -520], scale: 420, op: 0.28 }, // cobalt nebula
       { color: 0x7b52c0, pos: [-340, -260, -380], scale: 280, op: 0.30 }, // violet nebula
-      { color: 0xf5a623, pos: [ 320,  280, -420], scale: 240, op: 0.22 }, // amber nebula
+      { color: 0xf5a623, pos: [ 320,  280, -420], scale: 240, op: 0.20 }, // amber nebula
       { color: 0x4a8c5c, pos: [ -60,  380, -500], scale: 220, op: 0.20 }, // sage nebula
     ];
     CLOUD_PRESETS.forEach(p => {
@@ -221,7 +219,7 @@ const Constellation = ({
       { color: 0xc8c4d8, pos: [ 540,  220, -780], scale: 50,  rot: 0.3 },
       { color: 0xf5a623, pos: [-620, -180, -820], scale: 38,  rot: 1.2 },
       { color: 0x4a90d9, pos: [ 200, -420, -880], scale: 30,  rot: -0.6 },
-      { color: 0xe8524a, pos: [-280,  460, -780], scale: 42,  rot: 0.9 },
+      { color: 0x7b52c0, pos: [-280,  460, -780], scale: 42,  rot: 0.9 },
     ];
     GALAXY_PRESETS.forEach(p => {
       const m = new THREE.SpriteMaterial({
@@ -241,7 +239,6 @@ const Constellation = ({
     const PULSAR_PRESETS = [
       { color: 0xffe9c2, pos: [ 280,  340, -640], scale: 6.5, phase: 0.0, freq: 0.7 },
       { color: 0xc7d8ff, pos: [-440,  -80, -700], scale: 5.5, phase: 1.6, freq: 0.5 },
-      { color: 0xffd0cf, pos: [ 150, -320, -680], scale: 5.0, phase: 2.4, freq: 0.9 },
       { color: 0xd4ffe1, pos: [-180,  220, -560], scale: 4.5, phase: 0.8, freq: 0.6 },
       { color: 0xe7d1ff, pos: [ 480,   40, -660], scale: 6.0, phase: 3.1, freq: 0.4 },
       { color: 0xfff2c2, pos: [-240, -380, -620], scale: 4.0, phase: 1.2, freq: 1.1 },
@@ -390,7 +387,7 @@ const Constellation = ({
       pickPositions: [],
       hovered: null,
       camTarget: new THREE.Vector3(0, 0, 0),
-      camDistance: 180,
+      camDistance: 130,
       camPhi: Math.PI / 2,
       camTheta: 0,
       autoSpin: true,

@@ -121,24 +121,65 @@ function App() {
   React.useEffect(() => {
     const load = async () => {
       let g;
+      const projName = (projects.find(p => p.id === projectRoot) || {}).name;
       try {
-        g = await buildGraphFromBackend(projectRoot || '');
+        g = await buildGraphFromBackend(projectRoot || '', projName);
       } catch {
-        g = { nodes: [], edges: [], project: { name: 'Workspace', description: '' } };
+        g = { nodes: [], edges: [], project: { name: projName || 'Workspace', description: '' } };
       }
       setGraph(g);
       setSelectedId(null);
+      setSelectedNodeOverride(null);
       setReticle(null);
       setCameraFocus(null);
       setTopMatches([]);
       setTotalMatches(0);
       setPulseIds(new Set());
+      setSearchValue('');
+      setCommittedQuery('');
       if (g.nodes.length > 0) runIndexingAnimation(g);
       else setOverlay(null);
     };
     load();
   // eslint-disable-next-line
-  }, [projectRoot]);
+  }, [projectRoot, projects]);
+
+  // ─── refresh graph from backend (called after agent fs changes) ───────────
+  const refreshGraph = React.useCallback(async () => {
+    if (!projectRoot) return;
+    const projName = (projects.find(p => p.id === projectRoot) || {}).name;
+    try {
+      const g = await buildGraphFromBackend(projectRoot, projName);
+      setGraph(g);
+    } catch {}
+    fetchProjects().then(ps => setProjects(ps)).catch(() => {});
+  }, [projectRoot, projects]);
+
+  // ─── agent surfaces a top result → drop into the search bar ──────────────
+  const handleAgentResult = React.useCallback(({ query, hits }) => {
+    if (!hits || hits.length === 0) return;
+    // Push the user's natural-language query into the search bar — that
+    // re-runs the semantic search and lights up the matching constellation
+    // nodes. The user sees both the chat answer and the visual reticle.
+    const q = (query || '').trim();
+    if (q) {
+      setSearchValue(q);
+      setCommittedQuery(q);
+    }
+    // Also, directly pulse the specific files the agent returned so that
+    // even if a hit doesn't pop in the semantic search top-k, the user sees
+    // it light up.
+    const matchIds = new Set();
+    hits.forEach(h => {
+      const target = (h || '').trim();
+      if (!target) return;
+      const match = graph.nodes.find(n =>
+        n.path === target || n.name === target || (target.endsWith(n.name) && n.name)
+      );
+      if (match) matchIds.add(match.id);
+    });
+    if (matchIds.size > 0) setPulseIds(matchIds);
+  }, [graph]);
 
   // ─── real SSE indexing ────────────────────────────────────────────────────
   const startIndexing = React.useCallback((pid) => {
@@ -160,10 +201,16 @@ function App() {
         });
       } else if (type === 'end') {
         pipelineHideTimer.current = setTimeout(() => setPipelineVisible(false), 4000);
-        buildGraphFromBackend(pid)
-          .then(g => { setGraph(g); if (g.nodes.length > 0) runIndexingAnimation(g); })
+        // Refetch projects first so the new file count + name are up to date,
+        // then rebuild the graph with the correct project name in the header.
+        fetchProjects()
+          .then(ps => {
+            setProjects(ps);
+            const projName = (ps.find(p => p.id === pid) || {}).name;
+            return buildGraphFromBackend(pid, projName);
+          })
+          .then(g => { if (g) { setGraph(g); if (g.nodes.length > 0) runIndexingAnimation(g); } })
           .catch(() => {});
-        fetchProjects().then(ps => setProjects(ps)).catch(() => {});
       } else if (type === 'error') {
         pipelineHideTimer.current = setTimeout(() => setPipelineVisible(false), 3000);
       }
@@ -446,6 +493,8 @@ function App() {
         onClose={() => setChatOpen(false)}
         projectRoot={projectRoot}
         surfaceLight={tweaks.surfaceLight}
+        onAgentResult={handleAgentResult}
+        onAgentFsChange={refreshGraph}
       />
 
       {overlay === 'indexing' && (

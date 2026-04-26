@@ -2,7 +2,7 @@
 
 const MIME_COLORS = {
   code:   '#4a6fc0',
-  doc:    '#c0504a',
+  doc:    '#c8a070',
   image:  '#c09a3a',
   config: '#4a8c5c',
   misc:   '#8a5cc0',
@@ -53,21 +53,24 @@ async function fetchProjects() {
   return d.projects || [];
 }
 
-async function buildGraphFromBackend(projectRoot) {
+async function buildGraphFromBackend(projectRoot, projectName) {
   const pid = projectRoot || '';
   const url = `${BASE}/api/projection?query=&project=${encodeURIComponent(pid)}`;
   const r = await fetch(url);
   const d = await r.json();
   const pts = d.points || [];
 
+  const displayName = projectName || (pid ? 'Project' : 'Workspace');
+
   if (pts.length === 0) {
-    return { nodes: [], edges: [], project: { name: pid ? pid.split(/[\\/]/).pop() : 'Workspace', description: '0 indexed files' } };
+    return { nodes: [], edges: [], project: { name: displayName, description: '0 indexed files' } };
   }
 
   const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
   const xMax = Math.max(...xs.map(Math.abs)) || 1;
   const yMax = Math.max(...ys.map(Math.abs)) || 1;
-  const scale = 120 / Math.max(xMax, yMax);
+  // Tightened from 120 → 70 so nodes stay closer to center
+  const scale = 70 / Math.max(xMax, yMax);
 
   const nodes = pts.map((p, i) => {
     const name = p.filename || p.filepath?.split('/').pop() || `file_${i}`;
@@ -84,7 +87,8 @@ async function buildGraphFromBackend(projectRoot) {
       size: 0.6 + (hashStr(name) % 100) / 100 * 1.4,
       x: p.x * scale,
       y: p.y * scale,
-      z: ((hashStr(path) % 60) - 30),
+      // Z spread tightened from ±30 to ±15
+      z: ((hashStr(path) % 30) - 15),
       clusterCenter: { x: p.x * scale, y: p.y * scale, z: 0 },
     };
   });
@@ -125,7 +129,7 @@ async function buildGraphFromBackend(projectRoot) {
   return {
     nodes,
     edges,
-    project: { name: pid ? pid.split(/[\\/]/).pop() : 'Workspace', description: `${pts.length} indexed files` },
+    project: { name: displayName, description: `${pts.length} indexed files` },
   };
 }
 
@@ -137,11 +141,9 @@ async function searchFiles(query, projectRoot, graphNodes) {
   const hits = d.hits || [];
 
   return hits.map((h, i) => {
-    // Try to find the corresponding constellation node
     const node = graphNodes.find(n =>
       n.path === h.filepath || n.name === h.filename
     );
-    // If no graph node, synthesise one for display (id < 0 = not in constellation)
     const displayNode = node || {
       id: -(i + 1),
       name: h.filename || (h.filepath || '').split('/').pop() || '?',
@@ -156,15 +158,31 @@ async function searchFiles(query, projectRoot, graphNodes) {
   }).filter(x => x.score > 0);
 }
 
+// Returns the full preview payload: { kind, content, mime, name, path, size, message }
 async function fetchFilePreview(relPath) {
-  const r = await fetch(`${BASE}/api/file/preview?rel_path=${encodeURIComponent(relPath)}`);
-  if (!r.ok) return null;
-  const d = await r.json();
-  if (d.kind === 'text' && d.content) return d.content;
-  if (d.kind === 'image' && d.content) return `[ image · ${d.name} ]\n\ndata:${d.mime || 'image/png'};base64,${d.content}`;
-  if (d.kind === 'pdf') return `[ PDF · ${d.name} ]\n\n${d.content || '(no text layer)'}`;
-  if (d.kind === 'binary') return `[ binary · ${d.name} ]\n\n${d.message || ''}`;
-  return null;
+  try {
+    const r = await fetch(`${BASE}/api/file/preview?rel_path=${encodeURIComponent(relPath)}`);
+    if (!r.ok) {
+      const detail = await r.json().catch(() => ({}));
+      return { kind: 'error', message: detail.detail || `HTTP ${r.status}`, path: relPath };
+    }
+    return await r.json();
+  } catch (e) {
+    return { kind: 'error', message: String(e), path: relPath };
+  }
+}
+
+async function openInDefaultApp(relPath) {
+  try {
+    const r = await fetch(`${BASE}/api/file/open`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rel_path: relPath }),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }
 
 function streamIndexProject(projectId, onEvent) {
@@ -181,5 +199,5 @@ function streamIndexProject(projectId, onEvent) {
 
 Object.assign(window, {
   MIME_COLORS, MIME_LABELS,
-  fetchProjects, buildGraphFromBackend, searchFiles, fetchFilePreview, streamIndexProject,
+  fetchProjects, buildGraphFromBackend, searchFiles, fetchFilePreview, openInDefaultApp, streamIndexProject,
 });

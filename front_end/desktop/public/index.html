@@ -77,6 +77,7 @@ function App() {
   const [totalMatches, setTotalMatches] = React.useState(0);
   const [pulseIds, setPulseIds] = React.useState(() => new Set());
   const [camPos, setCamPos] = React.useState(null);
+  const [selectedNodeOverride, setSelectedNodeOverride] = React.useState(null);
 
   // ─── backend state ───────────────────────────────────────────────────────
   const [projects, setProjects] = React.useState([]);
@@ -89,14 +90,25 @@ function App() {
   const [currentFile, setCurrentFile] = React.useState('');
   const [apiKey, setApiKey] = React.useState('');
 
+  // ─── pipeline (SSE indexing) state ───────────────────────────────────────
+  const EMPTY_PIPELINE = { stages: { loaded: 0, embed: 0, insert: 0, done: 0, error: 0 }, total: 0, recent: [] };
+  const [pipeline, setPipeline] = React.useState(EMPTY_PIPELINE);
+  const [pipelineVisible, setPipelineVisible] = React.useState(false);
+  const pipelineHideTimer = React.useRef(null);
+
   const cameraRef = React.useRef(null);
 
-  // ─── load real projects on mount ─────────────────────────────────────────
+  // ─── load real projects + check API key on mount ──────────────────────────
   React.useEffect(() => {
+    fetch('http://127.0.0.1:8765/health')
+      .then(r => r.json())
+      .then(h => { if (h.gemini_key_set) setApiKey('ENV_LOADED'); })
+      .catch(() => {});
+
     fetchProjects().then(ps => {
       setProjects(ps);
       if (ps.length > 0) {
-        setProjectRoot(ps[0].root || ps[0].id || null);
+        setProjectRoot(ps[0].id || null);
       } else {
         setOverlay('onboarding');
       }
@@ -121,13 +133,57 @@ function App() {
       setTopMatches([]);
       setTotalMatches(0);
       setPulseIds(new Set());
-      runIndexingAnimation(g);
+      if (g.nodes.length > 0) runIndexingAnimation(g);
+      else setOverlay(null);
     };
     load();
   // eslint-disable-next-line
   }, [projectRoot]);
 
-  // ─── indexing animation ───────────────────────────────────────────────────
+  // ─── real SSE indexing ────────────────────────────────────────────────────
+  const startIndexing = React.useCallback((pid) => {
+    if (!pid) return;
+    clearTimeout(pipelineHideTimer.current);
+    setPipeline(EMPTY_PIPELINE);
+    setPipelineVisible(true);
+    streamIndexProject(pid, (type, data) => {
+      if (type === 'start') {
+        setPipeline(prev => ({ ...prev, total: data.total || 0 }));
+      } else if (type === 'stage') {
+        setPipeline(prev => {
+          const stages = { ...prev.stages };
+          if (data.stage in stages) stages[data.stage]++;
+          const recent = data.stage === 'loaded'
+            ? [...prev.recent.slice(-9), data.file]
+            : prev.recent;
+          return { ...prev, stages, recent };
+        });
+      } else if (type === 'end') {
+        pipelineHideTimer.current = setTimeout(() => setPipelineVisible(false), 4000);
+        buildGraphFromBackend(pid)
+          .then(g => { setGraph(g); if (g.nodes.length > 0) runIndexingAnimation(g); })
+          .catch(() => {});
+        fetchProjects().then(ps => setProjects(ps)).catch(() => {});
+      } else if (type === 'error') {
+        pipelineHideTimer.current = setTimeout(() => setPipelineVisible(false), 3000);
+      }
+    });
+  }, []);
+
+  // ─── save API key to .env via backend ────────────────────────────────────
+  const handleApiKeyChange = React.useCallback(async (key) => {
+    if (!key || key === 'ENV_LOADED') return;
+    setApiKey(key);
+    try {
+      await fetch('http://127.0.0.1:8765/api/settings/apikey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      });
+    } catch {}
+  }, []);
+
+  // ─── indexing animation (constellation reveal) ────────────────────────────
   const runIndexingAnimation = React.useCallback((g) => {
     setOverlay('indexing');
     setIndexingProgress(0);
@@ -263,8 +319,16 @@ function App() {
   const onPickResult = React.useCallback((node) => {
     setPulseIds(new Set());
     setReticle(null);
-    frameNodes([node], node, 'best');
-    setSelectedId(node.id);
+    if (node.id >= 0) {
+      // Real graph node — fly the camera to it
+      frameNodes([node], node, 'best');
+      setSelectedId(node.id);
+      setSelectedNodeOverride(null);
+    } else {
+      // Synthetic hit (not in constellation) — just open preview panel
+      setSelectedId(null);
+      setSelectedNodeOverride(node);
+    }
   }, [frameNodes]);
 
   const onPickCluster = React.useCallback((clusterName) => {
@@ -282,6 +346,7 @@ function App() {
 
   const onNodeClick = React.useCallback((node) => {
     setSelectedId(node.id);
+    setSelectedNodeOverride(null);
     setPulseIds(new Set());
     setReticle(null);
     frameNodes([node], node, 'best');
@@ -291,17 +356,17 @@ function App() {
     setCamPos({ x: pos.x, y: pos.y, z: pos.z });
   }, []);
 
-  const selectedNode = selectedId != null ? graph.nodes[selectedId] : null;
+  const selectedNode = selectedId != null ? graph.nodes[selectedId] : selectedNodeOverride;
 
   const allProjectsMap = React.useMemo(() => {
     const m = {};
     projects.forEach(p => {
-      m[p.root || p.id] = { name: p.name, description: `${p.count || 0} files` };
+      m[p.id] = { name: p.name, description: `${p.count || 0} files` };
     });
     return m;
   }, [projects]);
 
-  const currentProjectKey = projectRoot || (projects.length > 0 ? (projects[0].root || projects[0].id) : '');
+  const currentProjectKey = projectRoot || (projects.length > 0 ? (projects[0].id || '') : '');
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#0a0a0f' }}>
@@ -335,8 +400,8 @@ function App() {
 
       <SettingsButton
         apiKey={apiKey}
-        onApiKeyChange={setApiKey}
-        onReindex={() => runIndexingAnimation(graph)}
+        onApiKeyChange={handleApiKeyChange}
+        onReindex={() => startIndexing(projectRoot)}
       />
 
       {hoverNode && hoverPos && hoverNode.id !== selectedId && (
@@ -371,8 +436,8 @@ function App() {
           node={selectedNode}
           graph={graph}
           surfaceLight={tweaks.surfaceLight}
-          onClose={() => setSelectedId(null)}
-          onPickNeighbor={(n) => setSelectedId(n.id)}
+          onClose={() => { setSelectedId(null); setSelectedNodeOverride(null); }}
+          onPickNeighbor={(n) => { setSelectedId(n.id); setSelectedNodeOverride(null); }}
         />
       )}
 
@@ -411,13 +476,16 @@ function App() {
               const proj = await createRes.json();
               const ps = await fetchProjects();
               setProjects(ps);
-              setProjectRoot(proj.root || proj.id);
+              setProjectRoot(proj.id);
+              startIndexing(proj.id);
             } catch {
               setOverlay('error');
             }
           }}
         />
       )}
+
+      <PipelineBar state={pipeline} visible={pipelineVisible} />
 
       {overlay === 'error' && (
         <ErrorOverlay
@@ -443,7 +511,7 @@ function App() {
                      onChange={(v) => setTweak('surfaceLight', v)} />
 
         <TweakSection label="States" />
-        <TweakButton label="Replay indexing" onClick={() => runIndexingAnimation(graph)} />
+        <TweakButton label="Re-index project" onClick={() => startIndexing(projectRoot)} />
         <TweakButton label="Show onboarding" onClick={() => setOverlay('onboarding')} />
         <TweakButton label="Show error state" onClick={() => setOverlay('error')} />
       </TweaksPanel>

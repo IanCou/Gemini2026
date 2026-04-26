@@ -309,10 +309,10 @@ const SettingsButton = ({ apiKey, onApiKeyChange, onReindex }) => {
           </label>
           <input
             type="password"
-            value={draft}
+            value={draft === 'ENV_LOADED' ? '' : draft}
             onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => onApiKeyChange && onApiKeyChange(draft)}
-            placeholder="AIza…"
+            onBlur={() => { if (draft && draft !== 'ENV_LOADED') onApiKeyChange && onApiKeyChange(draft); }}
+            placeholder={draft === 'ENV_LOADED' ? 'Loaded from .env ✓' : 'AIza…'}
             style={{
               width: '100%', boxSizing: 'border-box',
               background: '#0a0a0f', border: '0.5px solid #2e2a40',
@@ -1337,8 +1337,83 @@ const ChatPanel = ({ open, onClose, projectRoot, surfaceLight }) => {
   );
 };
 
+// ─── Pipeline bar (SSE indexing visualizer, fixed at bottom) ─────────────────
+const PipelineBar = ({ state, visible }) => {
+  const STAGES = [
+    { key: 'loaded', label: 'loaded',       color: '#3b82f6' },
+    { key: 'embed',  label: 'gemini-embed', color: '#f59e0b' },
+    { key: 'insert', label: 'atlas-insert', color: '#8b5cf6' },
+    { key: 'done',   label: 'done',         color: '#10b981' },
+  ];
+  const total  = Math.max(state.total, 1);
+  const errors = state.stages.error || 0;
+
+  return (
+    <div style={{
+      position: 'absolute', left: 0, right: 0, bottom: 0, height: 66, zIndex: 11,
+      background: 'rgba(10,10,15,0.93)',
+      backdropFilter: 'blur(14px) saturate(140%)',
+      WebkitBackdropFilter: 'blur(14px) saturate(140%)',
+      borderTop: '0.5px solid rgba(255,255,255,0.06)',
+      padding: '8px 20px 6px',
+      display: 'flex', flexDirection: 'column', gap: 5,
+      opacity: visible ? 1 : 0,
+      transform: visible ? 'translateY(0)' : 'translateY(100%)',
+      transition: 'opacity 0.3s ease, transform 0.3s ease',
+      pointerEvents: visible ? 'auto' : 'none',
+    }}>
+      {/* Stage bars */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+        {STAGES.map((s, i) => {
+          const n = state.stages[s.key] || 0;
+          const ratio = Math.min(1, n / total);
+          return (
+            <React.Fragment key={s.key}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 9, color: '#6e6a82', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.06em' }}>
+                    {s.label}
+                  </span>
+                  <span style={{ fontSize: 9, color: n > 0 ? s.color : '#3e3a50', fontFamily: 'JetBrains Mono, monospace' }}>
+                    {n}/{state.total || 0}
+                  </span>
+                </div>
+                <div style={{ height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', width: `${ratio * 100}%`,
+                    background: s.color,
+                    boxShadow: `0 0 5px ${s.color}88`,
+                    borderRadius: 3,
+                    transition: 'width 0.25s ease',
+                  }} />
+                </div>
+              </div>
+              {i < STAGES.length - 1 && (
+                <div style={{ color: '#2e2a40', fontSize: 11, alignSelf: 'center', paddingBottom: 6, flexShrink: 0 }}>›</div>
+              )}
+            </React.Fragment>
+          );
+        })}
+        {errors > 0 && (
+          <div style={{ alignSelf: 'center', paddingBottom: 6, marginLeft: 6, fontSize: 10, color: '#ef4444', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0 }}>
+            ✗ {errors}
+          </div>
+        )}
+      </div>
+      {/* Recent file ticker */}
+      <div style={{
+        fontSize: 9.5, color: '#4a6a50', fontFamily: 'JetBrains Mono, monospace',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        paddingLeft: 1,
+      }}>
+        {state.recent.length > 0 ? `▸ ${state.recent[state.recent.length - 1]}` : ' '}
+      </div>
+    </div>
+  );
+};
+
 Object.assign(window, {
   LogoGlyph, AppHeader, SettingsButton, SearchBar, TopResults, HoverTooltip,
   MiniMap, PreviewPanel, OnboardingOverlay, IndexingOverlay, ErrorOverlay,
-  SUGGESTED_QUERIES, ScrollableFileBody, ChatPanel,
+  SUGGESTED_QUERIES, ScrollableFileBody, ChatPanel, PipelineBar,
 });

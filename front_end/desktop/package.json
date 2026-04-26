@@ -6,6 +6,7 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri dev",
+    "backend": "bash scripts/dev.sh",
     "build": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri build"
   },
   "devDependencies": {

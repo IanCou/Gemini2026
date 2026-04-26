@@ -131,32 +131,55 @@ async function buildGraphFromBackend(projectRoot) {
 
 async function searchFiles(query, projectRoot, graphNodes) {
   const pid = projectRoot || '';
-  const url = `${BASE}/api/semantic/search?q=${encodeURIComponent(query)}&k=20${pid ? `&project=${encodeURIComponent(pid)}` : ''}`;
+  const url = `${BASE}/api/semantic/search?q=${encodeURIComponent(query)}&k=20&min_score=0.4${pid ? `&project=${encodeURIComponent(pid)}` : ''}`;
   const r = await fetch(url);
   const d = await r.json();
   const hits = d.hits || [];
 
-  const scored = [];
-  hits.forEach(h => {
+  return hits.map((h, i) => {
+    // Try to find the corresponding constellation node
     const node = graphNodes.find(n =>
-      n.path === h.filepath || n.path === h.filename || n.name === h.filename
+      n.path === h.filepath || n.name === h.filename
     );
-    if (node) scored.push({ node, score: Math.round(h.score * 100) });
-  });
-  return scored;
+    // If no graph node, synthesise one for display (id < 0 = not in constellation)
+    const displayNode = node || {
+      id: -(i + 1),
+      name: h.filename || (h.filepath || '').split('/').pop() || '?',
+      path: h.filepath || h.filename || '',
+      cluster: (h.filepath || '').split('/').slice(-2, -1)[0] || 'result',
+      mime: inferMime(h.filepath, h.file_type),
+      x: 0, y: 0, z: 0,
+      clusterCenter: { x: 0, y: 0, z: 0 },
+      size: 1,
+    };
+    return { node: displayNode, score: Math.round((h.score || 0) * 100) };
+  }).filter(x => x.score > 0);
 }
 
 async function fetchFilePreview(relPath) {
   const r = await fetch(`${BASE}/api/file/preview?rel_path=${encodeURIComponent(relPath)}`);
   if (!r.ok) return null;
   const d = await r.json();
-  if (d.type === 'text' && d.content) return d.content;
-  if (d.type === 'image' && d.base64) return `[ image · ${relPath} ]\n\nBase64-encoded image (${d.mime_type || 'image'})`;
-  if (d.type === 'pdf') return `[ PDF · ${relPath} ]\n\n${d.content || '(no text layer)'}`;
+  if (d.kind === 'text' && d.content) return d.content;
+  if (d.kind === 'image' && d.content) return `[ image · ${d.name} ]\n\ndata:${d.mime || 'image/png'};base64,${d.content}`;
+  if (d.kind === 'pdf') return `[ PDF · ${d.name} ]\n\n${d.content || '(no text layer)'}`;
+  if (d.kind === 'binary') return `[ binary · ${d.name} ]\n\n${d.message || ''}`;
   return null;
+}
+
+function streamIndexProject(projectId, onEvent) {
+  const params = new URLSearchParams();
+  if (projectId) params.set('project', projectId);
+  const url = `${BASE}/api/index/stream${params.toString() ? '?' + params.toString() : ''}`;
+  const es = new EventSource(url);
+  es.addEventListener('start',  ev => onEvent('start',  JSON.parse(ev.data)));
+  es.addEventListener('stage',  ev => onEvent('stage',  JSON.parse(ev.data)));
+  es.addEventListener('end',    ev => { onEvent('end', JSON.parse(ev.data)); es.close(); });
+  es.onerror = () => { onEvent('error', {}); es.close(); };
+  return es;
 }
 
 Object.assign(window, {
   MIME_COLORS, MIME_LABELS,
-  fetchProjects, buildGraphFromBackend, searchFiles, fetchFilePreview,
+  fetchProjects, buildGraphFromBackend, searchFiles, fetchFilePreview, streamIndexProject,
 });

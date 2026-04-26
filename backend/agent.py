@@ -537,7 +537,7 @@ def _run_undo_step(u: dict[str, Any]) -> None:
 
 
 @tool
-def semantic_file_search(query: str, k: int = 5) -> str:
+def semantic_file_search(query: str, k: int = 15) -> str:
     """Search indexed files by natural-language meaning (vector similarity on Gemini embeddings).
 
     Returns filenames, paths, MIME types, and scores. Requires Atlas vector index READY and

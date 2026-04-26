@@ -400,7 +400,7 @@ async function sendChat(text) {
     if (/find|search|where|locate/i.test(text)) {
       refreshProjection(text);
       try {
-        const sr = await api(withProject(`/api/semantic/search?q=${encodeURIComponent(text)}&k=10&min_score=0.0`));
+        const sr = await api(withProject(`/api/semantic/search?q=${encodeURIComponent(text)}&k=15&min_score=0.0`));
         waterfallHits = sr.hits.map((h) => ({ ...h, score: typeof h.score === "number" ? h.score : 0 }));
         if (lastQueryReticle) {
           const byName = Object.fromEntries(projection.points.map((p) => [p.filename, p]));

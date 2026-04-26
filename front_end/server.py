@@ -569,7 +569,7 @@ def _filter_by_score_gap(results: list[tuple[dict, float]], min_score: float = 0
 @app.get("/api/semantic/search")
 def semantic_search(
     q: str = Query(..., min_length=1),
-    k: int = Query(default=10, ge=1, le=20),
+    k: int = Query(default=15, ge=1, le=50),
     min_score: float = Query(default=0.60, ge=0.0, le=1.0),
     project: str = Query(default=""),
 ):

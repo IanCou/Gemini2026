@@ -18,7 +18,7 @@ db_client = MongoClient(MONGO_URI)
 collection = db_client[DB_NAME][COLLECTION_NAME]
 
 def similarity_search_with_score(
-    query: str, k: int = 3, project_id: str | None = None
+    query: str, k: int = 15, project_id: str | None = None
 ) -> list[tuple[dict, float]]:
     """
     LangChain-style API: returns [(document_fields, score), ...].

@@ -1,5 +1,6 @@
 import os
 import pprint
+import numpy as np
 from google import genai
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure
@@ -17,12 +18,25 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 db_client = MongoClient(MONGO_URI)
 collection = db_client[DB_NAME][COLLECTION_NAME]
 
+
+def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    denom = (np.linalg.norm(a) * np.linalg.norm(b))
+    if denom == 0:
+        return 0.0
+    return float(np.dot(a, b) / denom)
+
+
 def similarity_search_with_score(
     query: str, k: int = 15, project_id: str | None = None
 ) -> list[tuple[dict, float]]:
     """
-    LangChain-style API: returns [(document_fields, score), ...].
-    document_fields matches $project (no embedding); score is vectorSearchScore.
+    Returns [(document_fields, score), ...] sorted by score descending.
+
+    When project_id is given, loads all project embeddings from MongoDB and
+    computes exact cosine similarity in Python — this avoids the Atlas post-filter
+    problem where project files get buried under global noise in the ANN results.
+
+    When project_id is None, uses the Atlas $vectorSearch index for speed.
     """
     try:
         query_embedding = get_query_embedding(query)
@@ -34,18 +48,35 @@ def similarity_search_with_score(
         print("No query vector returned (check GEMINI_API_KEY / embedding errors).")
         return []
 
-    fetch_k = (k * 10) if project_id else k
-    vs = {
-        "index": VECTOR_INDEX_NAME,
-        "path": "embedding",
-        "queryVector": query_embedding,
-        "numCandidates": max(50, fetch_k * 10),
-        "limit": fetch_k,
-    }
-        
+    q = np.array(query_embedding, dtype="float32")
+
+    # ── Project-scoped: exact in-memory cosine search ────────────────────────
+    if project_id:
+        docs = list(collection.find(
+            {"project_id": project_id, "embedding": {"$exists": True}},
+            {"_id": 1, "filename": 1, "file_type": 1, "filepath": 1,
+             "page_range": 1, "embedding": 1},
+        ))
+        if not docs:
+            return []
+        scored: list[tuple[dict, float]] = []
+        for doc in docs:
+            emb = np.array(doc.pop("embedding"), dtype="float32")
+            score = _cosine_similarity(q, emb)
+            scored.append((doc, score))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:k]
+
+    # ── Unscoped: use Atlas vector index ─────────────────────────────────────
     pipeline = [
         {
-            "$vectorSearch": vs
+            "$vectorSearch": {
+                "index": VECTOR_INDEX_NAME,
+                "path": "embedding",
+                "queryVector": query_embedding,
+                "numCandidates": max(50, k * 10),
+                "limit": k,
+            }
         },
         {
             "$project": {
@@ -61,8 +92,7 @@ def similarity_search_with_score(
 
     out: list[tuple[dict, float]] = []
     try:
-        cursor = collection.aggregate(pipeline)
-        for doc in cursor:
+        for doc in collection.aggregate(pipeline):
             score = float(doc.pop("score", 0.0))
             out.append((doc, score))
     except OperationFailure as e:
@@ -70,13 +100,7 @@ def similarity_search_with_score(
         print(f"MongoDB $vectorSearch failed: {details}")
         return []
 
-    if project_id:
-        ids = [d.get("_id") for d, _ in out if d.get("_id")]
-        if ids:
-            keep = {d["_id"] for d in collection.find({"_id": {"$in": ids}, "project_id": project_id}, {"_id": 1})}
-            out = [(d, s) for d, s in out if d.get("_id") in keep]
-
-    return out[:k]
+    return out
 
 
 if __name__ == "__main__":

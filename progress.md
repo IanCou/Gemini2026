@@ -1,68 +1,57 @@
-# Session Progress: Nebula App Launch
+# Nebula — Progress Log
 
-**Date**: 2026-04-26  
-**Model**: Claude Haiku 4.5  
-**Task**: Run the app
+---
 
-## Summary
+## Session 3 — 2026-04-26
 
-Launched the Nebula desktop app (Tauri on macOS). App built and running successfully with full UI.
+### What was done
 
-## Actions Taken
+**Bug fixes (search & indexing)**
+- `query_elements.py` — rewrote project-scoped search to use exact in-memory cosine similarity (numpy) instead of Atlas ANN + post-filter. Atlas ANN was dominated by noise from unrelated projects, so project files never appeared in results. This was the root cause of the chat agent saying "I couldn't find any files containing python."
+- `backend.jsx` — fixed `searchFiles` to return results even when a file has no matching constellation node. Unmatched hits now get synthetic nodes (`id < 0`) so they still appear in the search results panel.
+- `backend.jsx` — fixed `fetchFilePreview` field names (`d.kind`, `d.content`, `d.mime` — was using wrong names `d.type`, `d.base64`, `d.mime_type`).
 
-1. **Started Tauri dev server**
-   - Command: `cd /Users/iancoutinho/Documents/Coding/Gemini2026/front_end && npm run dev`
-   - Compiled Tauri binary in 1.98s
-   - Window now visible and interactive on macOS
+**UI fixes**
+- `index.html` — fixed `projectRoot` state to store project ID instead of folder path. Was causing all projection/search API calls to fail silently.
+- `index.html` — added `selectedNodeOverride` state so clicking a search result that isn't in the constellation still opens the preview panel.
+- `index.html` — `selectedNode` now falls back to `selectedNodeOverride`; `onNodeClick` and `PreviewPanel` close/neighbor-pick clear the override correctly.
+- `index.html` — added real SSE indexing via `startIndexing(pid)` that connects to `/api/index/stream` and drives the `PipelineBar`.
+- `index.html` — API key indicator now correctly shows green on load by fetching `/health`.
+- `ui.jsx` — added `PipelineBar` component at the bottom showing real indexing stages (loaded → gemini-embed → atlas-insert → done) with progress bars and a recent-file ticker.
+- `ui.jsx` — `SettingsButton` shows "Loaded from .env ✓" placeholder when key is read from environment.
 
-2. **Monitored startup**
-   - Set up log monitoring to track build completion and errors
-   - Identified Gemini API quota exhaustion (429 RESOURCE_EXHAUSTED)
+**Dev workflow**
+- Added `"backend": "bash scripts/dev.sh"` script to `front_end/desktop/package.json`.
+- `npm run dev` in `front_end/desktop/` now starts everything (Tauri calls `dev.sh` as `beforeDevCommand`, which boots FastAPI on 8765 + static server on 1420, then Tauri opens the desktop window).
 
-3. **Verified app status**
-   - ✅ Tauri binary built successfully
-   - ✅ App window open and responsive
-   - ✅ All UI features available (sidebar, chat, visualizations, project picker)
-   - ⚠️ Indexing pipeline blocked: Gemini API at quota limit
+### Current state
 
-## Current State
+- App runs end-to-end: `npm run dev` from `front_end/desktop/` launches the full stack.
+- Backend health: MongoDB connected ✓, Gemini key loaded from `.env` ✓.
+- Semantic search works for project-scoped queries (exact cosine similarity).
+- Preview panel opens for both constellation nodes and search-only hits.
+- Indexing pipeline visualized in real time via SSE.
 
-- **App running**: Nebula window open on macOS, fully interactive
-- **Frontend**: HTML/CSS/JS fully rendered, all modes available (Constellation, Pipeline, Scores)
-- **Backend**: FastAPI server running on port 8765, static server on 1420
-- **Database**: MongoDB Atlas connected (vector search configured)
-- **Features available**:
-  - Projects sidebar with folder picker
-  - Chat interface with quick commands
-  - Multi-mode visualization canvas
-  - Activity feed
-  - Project management (create, delete, select)
+### Known gaps / next steps
 
-## Blockers
+- Agent chat (`/api/chat`) uses Gemini 2.5 Flash — verify tool calls surface file results correctly in the chat panel after the `query_elements.py` fix.
+- `project_id` is not a filter field in the Atlas vector index (`create_vector_index.py`) — unscoped global search still uses ANN which may miss files. Add `project_id` as a filter field and expose an admin endpoint to recreate the index.
+- Indexing performance: sequential per-file embedding calls. Implement `ThreadPoolExecutor` (10 workers), incremental hashing, and bulk MongoDB upserts per design.md §11.
+- Score waterfall visualization (design.md §5.3) not yet implemented.
+- Streaming token output for chat (design.md §4.2) not yet implemented — currently full-response JSON.
+- Windows packaging not started.
 
-- **Gemini API quota exceeded**: Embedding generation failing with 429 RESOURCE_EXHAUSTED
-  - Affects: `/api/index/stream` (file indexing), embedding pipeline
-  - Resolution: Quota resets daily or enable billing at https://ai.google.com/quotas
-  - Impact: Chat and UI work; indexing blocked until quota available
+---
 
-## Next Steps
+## Session 2 — (prior)
 
-1. Wait for daily API quota reset, or
-2. Add billing to Gemini API project to increase quota, then
-3. Test indexing and embedding workflows
+- Full UI rewrite: constellation 3D view (Three.js), search bar, preview panel with find-in-file, chat panel, onboarding overlay, pipeline bar, minimap, tweaks panel.
+- FastAPI server (`front_end/server.py`): projects CRUD, `/api/projection`, `/api/semantic/search`, `/api/index/stream` (SSE), `/api/file/preview`, `/api/chat`, `/api/session/new`, `/api/dialog/pick_folder`, `/api/settings/apikey`.
+- MongoDB document tagging with `project_id` for scoped searches.
+- Gemini API key rotation (old key quota-exhausted → new key in `.env`).
 
-## Prior Session Work (Context)
+## Session 1 — (prior)
 
-This session continued from extensive prior work:
-- Full UI implementation (chat, sidebar, three visualization modes)
-- Projects feature with native folder picker (macOS, Windows, Linux)
-- Custom modal implementation (replaces `window.prompt()` for Tauri compatibility)
-- SSE-based streaming indexing pipeline
-- MongoDB document tagging with `project_id` for scoped searches
-- Path expansion (`~`) and absolute path support in file picker
-- Project persistence via `~/.nebula/projects.json`
-- CSS Grid layout (168px sidebar + responsive main content)
-- Dark theme with copper accent (#f59e0b)
-
-See `/Users/iancoutinho/.claude/projects/-Users-iancoutinho-Documents-Coding-Gemini2026/7bb786aa-15eb-49d4-9ac7-75a4ec68c837.jsonl` for full prior context.
-
+- Backend engine: `input_to_embedding.py`, `add_element.py`, `batch_process.py`, `query_elements.py`, `agent.py`, `create_vector_index.py`.
+- Initial Tauri shell and FastAPI wiring.
+- MongoDB Atlas vector index (768-dim cosine, filter on `file_type`).

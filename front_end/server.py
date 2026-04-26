@@ -1066,6 +1066,36 @@ def stats(project: str = Query(default="")):
         return {"count": 0, "by_type": {}, "mongo": False, "error": str(e)[:160]}
 
 
+class ApiKeyBody(BaseModel):
+    key: str = Field(..., min_length=1)
+
+
+@app.post("/api/settings/apikey")
+def save_apikey(body: ApiKeyBody):
+    key = body.key.strip()
+    env_path = _REPO_ROOT / ".env"
+    lines: list[str] = []
+    found = False
+    if env_path.is_file():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("GEMINI_API_KEY="):
+                lines.append(f"GEMINI_API_KEY={key}")
+                found = True
+            else:
+                lines.append(line)
+    if not found:
+        lines.append(f"GEMINI_API_KEY={key}")
+    env_path.write_text("\n".join(lines) + "\n")
+    os.environ["GEMINI_API_KEY"] = key
+    try:
+        import input_to_embedding as _ite
+        from google import genai as _genai
+        _ite.client = _genai.Client(api_key=key)
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 if __name__ == "__main__":
     import uvicorn
 

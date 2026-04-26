@@ -12,36 +12,57 @@ The repo has three layers, each runnable on its own:
 
 ## Prerequisites
 
-- **Python 3.11+** (tested with 3.12)
-- **MongoDB Atlas** cluster with **Vector Search** enabled. `$vectorSearch` does **not** run against a default local `mongod`.
-- **Gemini API key** with access to embedding (`gemini-embedding-2-preview`) and chat (`gemini-2.5-flash`) models
-- **libmagic** for `python-magic`:
-  - macOS: `brew install libmagic`
-  - Debian/Ubuntu: `sudo apt install libmagic1`
-- **For the desktop app only:** Node.js 18+, Rust toolchain (`rustup` → `cargo`), and Tauri's [system prerequisites](https://tauri.app/start/prerequisites/)
+| Requirement | macOS | Windows |
+|---|---|---|
+| Python 3.11+ | `brew install python@3.12` or from python.org | Download from python.org — check **"Add to PATH"** during install |
+| libmagic | `brew install libmagic` | Handled automatically via `python-magic-bin` wheel — no extra step |
+| Node.js 18+ | `brew install node` or from nodejs.org | From nodejs.org |
+| Rust + Cargo | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` | `winget install Rustlang.Rustup` or from rustup.rs |
+| Tauri system deps | Xcode Command Line Tools: `xcode-select --install` | WebView2 (ships with Windows 11 / Edge) — see [Tauri prerequisites](https://tauri.app/start/prerequisites/) |
+| MongoDB Atlas | Cluster with **Vector Search** enabled — `$vectorSearch` does **not** work against a local `mongod` | same |
+| Gemini API key | With access to `gemini-embedding-2-preview` and `gemini-2.5-flash` | same |
 
 ---
 
 ## One-time setup
 
-From the repo root ([Gemini2026/](.)):
+### macOS / Linux
 
 ```bash
-# 1. Create and activate a venv (Python 3.11+)
+# 1. Create and activate a venv
 python3.12 -m venv venv
-source venv/bin/activate           # Windows: venv\Scripts\activate
+source venv/bin/activate
 
-# 2. Install Python deps (covers backend + FastAPI server + agent)
+# 2. Install Python deps
 pip install -r front_end/requirements.txt send2trash
 
-# 3. Set environment variables
-export GEMINI_API_KEY='your-gemini-key'
-export MONGO_URI='mongodb+srv://USER:PASS@cluster.mongodb.net/?appName=...'
-# Optional: confine all agent file ops to one directory (default: cwd)
-export NEBULA_FS_ROOT="$(pwd)"
+# 3. Create a .env file at the repo root (recommended — picked up automatically)
+cat > .env <<'EOF'
+GEMINI_API_KEY=your-gemini-key
+MONGO_URI=mongodb+srv://USER:PASS@cluster.mongodb.net/?appName=...
+NEBULA_FS_ROOT=/path/to/your/project
+EOF
 ```
 
-You can also drop the same `KEY=VALUE` lines into a `.env` file at the repo root, in [front_end/](front_end/), or in [front_end/desktop/](front_end/desktop/) — [front_end/env_bootstrap.py](front_end/env_bootstrap.py) loads them via `python-dotenv` when the FastAPI server starts.
+### Windows (PowerShell)
+
+```powershell
+# 1. Create and activate a venv
+python -m venv venv
+venv\Scripts\Activate.ps1
+
+# 2. Install Python deps
+pip install -r front_end\requirements.txt send2trash python-magic-bin
+
+# 3. Create a .env file at the repo root
+@"
+GEMINI_API_KEY=your-gemini-key
+MONGO_URI=mongodb+srv://USER:PASS@cluster.mongodb.net/?appName=...
+NEBULA_FS_ROOT=C:\path\to\your\project
+"@ | Out-File -Encoding utf8 .env
+```
+
+> **Tip:** The `.env` file is loaded automatically by [front_end/env_bootstrap.py](front_end/env_bootstrap.py) whenever the FastAPI server starts. You don't need to `export` / `set` variables manually each time.
 
 ### Create the Atlas Vector Search index (once)
 
@@ -80,8 +101,13 @@ python backend/input_embedding_sample_test.py   # edit path in file first, print
 Run from inside [backend/](backend/) so the sibling imports resolve.
 
 ```bash
+# macOS / Linux
 cd backend
 source ../venv/bin/activate
+
+# Windows
+cd backend
+..\venv\Scripts\Activate.ps1
 ```
 
 | Task | Command |
@@ -124,8 +150,14 @@ Agent-specific environment:
 Run from [front_end/](front_end/) so its `import server` and the relative `backend/` import path work.
 
 ```bash
+# macOS / Linux
 cd front_end
 source ../venv/bin/activate
+python -m uvicorn server:app --host 127.0.0.1 --port 8765 --reload
+
+# Windows
+cd front_end
+..\venv\Scripts\Activate.ps1
 python -m uvicorn server:app --host 127.0.0.1 --port 8765 --reload
 ```
 
@@ -158,24 +190,62 @@ Open `http://127.0.0.1:8765/docs` for the auto-generated OpenAPI UI.
 
 ## Layer 3 — Run the Tauri desktop app
 
-The desktop app expects the FastAPI server on `127.0.0.1:8765` and serves the static UI from [front_end/desktop/public/](front_end/desktop/public/) on `127.0.0.1:1420` during dev. The `tauri dev` flow runs both for you via [front_end/desktop/scripts/dev.sh](front_end/desktop/scripts/dev.sh).
+The desktop app expects the FastAPI server on `127.0.0.1:8765` and serves the static UI from [front_end/desktop/public/](front_end/desktop/public/) on `127.0.0.1:1420` during dev. `npm run dev` starts everything — the Python backend, the static file server, and the Tauri window — in one command.
+
+### macOS
 
 ```bash
 cd front_end/desktop
 npm install
-npm run dev          # starts FastAPI (uvicorn) + static server + Tauri dev window
+npm run dev
 ```
 
-The dev script auto-discovers a venv at `./venv`, `./.venv`, `front_end/venv`, or `front_end/.venv`; otherwise it falls back to `python3` on `PATH`. Make sure `GEMINI_API_KEY` and `MONGO_URI` are exported in the same shell, or sit in a `.env` next to one of those venv candidates.
+The desktop window opens automatically. The app opens in a browser tab at `http://127.0.0.1:1420` as a fallback if the native window doesn't appear.
 
-To produce a release `.app` / `.dmg`:
+### Windows (PowerShell or Git Bash)
+
+```powershell
+cd front_end\desktop
+npm install
+npm run dev
+```
+
+> **Git Bash is recommended on Windows** — the `beforeDevCommand` runs `scripts/dev.sh` (a bash script). If you use plain PowerShell without Git Bash on `PATH`, run the two servers manually instead:
+>
+> ```powershell
+> # Terminal 1 — Python backend
+> cd front_end
+> ..\venv\Scripts\python.exe -m uvicorn server:app --host 127.0.0.1 --port 8765 --reload
+>
+> # Terminal 2 — Tauri window
+> cd front_end\desktop
+> npx tauri dev
+> ```
+
+The dev script auto-discovers a venv at `./venv`, `./.venv`, `front_end/venv`, or `front_end/.venv`, then falls back to whatever `python` / `python3` is on `PATH`. Your `.env` file at the repo root is loaded automatically.
+
+### Separate backend-only script
+
+If you want the backend without the Tauri window (e.g. to use the app in a browser):
 
 ```bash
 cd front_end/desktop
-npm run build
+npm run backend      # starts FastAPI on :8765 + static server on :1420
 ```
 
-In a packaged build, [front_end/desktop/src-tauri/src/backend.rs](front_end/desktop/src-tauri/src/backend.rs) launches `python3 -m uvicorn server:app` from the bundled Resources folder and waits up to 45s for port 8765. Override the Python it uses with `COPPERGOLEM_PYTHON=/abs/path/to/python`. Backend logs go to `$TMPDIR/coppergolem-backend.log`.
+Then open `http://127.0.0.1:1420` in your browser.
+
+### Production build
+
+```bash
+# macOS — produces .app and .dmg in front_end/desktop/src-tauri/target/release/bundle/
+cd front_end/desktop && npm run build
+
+# Windows — produces .msi and .exe
+cd front_end\desktop && npm run build
+```
+
+In a packaged build, [src-tauri/src/backend.rs](front_end/desktop/src-tauri/src/backend.rs) launches `python3 -m uvicorn server:app` from the bundled Resources folder and waits up to 45 s for port 8765. Override with `COPPERGOLEM_PYTHON=/abs/path/to/python`. Backend logs go to `$TMPDIR/coppergolem-backend.log` (macOS/Linux) or `%TEMP%\coppergolem-backend.log` (Windows).
 
 ---
 

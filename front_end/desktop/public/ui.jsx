@@ -75,7 +75,7 @@ const LogoGlyph = ({ variant = 'cloud', size = 32 }) => {
 
 // ─── App header (logo + project name) ─────────────────────────────────────
 // ─── App header (logo + project switcher) ─────────────────────────────────
-const AppHeader = ({ projectKey, project, allProjects, onPickProject, logoVariant, onSwitchProject, surfaceLight, chatOpen, onChatToggle }) => {
+const AppHeader = ({ projectKey, project, allProjects, onPickProject, logoVariant, onSwitchProject, surfaceLight, onDeleteProject }) => {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
   React.useEffect(() => {
@@ -147,25 +147,7 @@ const AppHeader = ({ projectKey, project, allProjects, onPickProject, logoVarian
         </svg>
       </button>
 
-      {/* Chat toggle button */}
-      <button
-        onClick={onChatToggle}
-        title={chatOpen ? 'Close chat' : 'Open chat'}
-        style={{
-          width: 26, height: 26,
-          border: chatOpen ? '0.5px solid rgba(74,144,217,0.5)' : '0.5px solid rgba(255,255,255,0.08)',
-          background: chatOpen ? 'rgba(74,144,217,0.15)' : 'transparent',
-          color: chatOpen ? '#4a90d9' : '#c8c4d8', borderRadius: 6,
-          cursor: 'pointer', padding: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'background 0.15s, border-color 0.15s, color 0.15s',
-        }}
-      >
-        <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-          <path d="M7 1C3.686 1 1 3.239 1 6c0 1.543.72 2.93 1.87 3.895L2.5 13l3.23-1.54A6.42 6.42 0 007 11c3.314 0 6-2.239 6-5s-2.686-5-6-5z"
-                stroke="currentColor" strokeWidth="1" strokeLinejoin="round"/>
-        </svg>
-      </button>
+
 
       {open && (
         <div style={{
@@ -185,46 +167,75 @@ const AppHeader = ({ projectKey, project, allProjects, onPickProject, logoVarian
           {Object.entries(allProjects).map(([key, p]) => {
             const active = key === projectKey;
             return (
-              <button
-                key={key}
-                onClick={() => { onPickProject(key); setOpen(false); }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  width: '100%', textAlign: 'left',
-                  padding: '7px 9px',
-                  background: active ? 'rgba(74,144,217,0.12)' : 'transparent',
-                  border: 0, borderRadius: 7,
-                  cursor: 'pointer', color: '#e8e6f0', fontFamily: 'inherit',
-                  marginBottom: 1,
-                }}
-                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+              <div key={key} style={{ position: 'relative', marginBottom: 1, borderRadius: 7 }}
+                   onMouseEnter={(e) => {
+                     if (!active) e.currentTarget.querySelector('.proj-btn').style.background = 'rgba(255,255,255,0.04)';
+                     const btn = e.currentTarget.querySelector('.del-btn');
+                     if (btn) btn.style.opacity = '1';
+                   }}
+                   onMouseLeave={(e) => {
+                     if (!active) e.currentTarget.querySelector('.proj-btn').style.background = 'transparent';
+                     const btn = e.currentTarget.querySelector('.del-btn');
+                     if (btn) btn.style.opacity = '0';
+                   }}
               >
-                <span style={{
-                  width: 22, height: 22, borderRadius: 5,
-                  background: active ? 'rgba(74,144,217,0.25)' : 'rgba(255,255,255,0.05)',
-                  border: '0.5px solid rgba(255,255,255,0.08)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                }}>
-                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 3.5L1 4.5V10a1 1 0 001 1h8a1 1 0 001-1V5a1 1 0 00-1-1H6L4.5 2H2.5A.5.5 0 002 2.5v1z"
-                          stroke={active ? '#4a90d9' : '#c8c4d8'} strokeWidth="1" strokeLinejoin="round"/>
+                <button
+                  className="proj-btn"
+                  onClick={() => { onPickProject(key); setOpen(false); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    width: '100%', textAlign: 'left',
+                    padding: '7px 9px',
+                    background: active ? 'rgba(74,144,217,0.12)' : 'transparent',
+                    border: 0, borderRadius: 7,
+                    cursor: 'pointer', color: '#e8e6f0', fontFamily: 'inherit',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <span style={{
+                    width: 22, height: 22, borderRadius: 5,
+                    background: active ? 'rgba(74,144,217,0.25)' : 'rgba(255,255,255,0.05)',
+                    border: '0.5px solid rgba(255,255,255,0.08)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  }}>
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 3.5L1 4.5V10a1 1 0 001 1h8a1 1 0 001-1V5a1 1 0 00-1-1H6L4.5 2H2.5A.5.5 0 002 2.5v1z"
+                            stroke={active ? '#4a90d9' : '#c8c4d8'} strokeWidth="1" strokeLinejoin="round"/>
+                    </svg>
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0, paddingRight: 24 }}>
+                    <div style={{ fontSize: 12, fontFamily: 'JetBrains Mono, ui-monospace, monospace', color: active ? '#fff' : '#e8e6f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.name}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#6e6a82', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.description}
+                    </div>
+                  </span>
+                  {active && (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}>
+                      <path d="M2 5l2 2 4-5" stroke="#4a90d9" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </button>
+                <button
+                  className="del-btn"
+                  onClick={(e) => { e.stopPropagation(); if (onDeleteProject) onDeleteProject(key); }}
+                  title="Delete project"
+                  style={{
+                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                    width: 24, height: 24, padding: 0,
+                    background: 'rgba(232,82,74,0.15)', border: '0.5px solid rgba(232,82,74,0.3)', borderRadius: 5, color: '#e8524a',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    opacity: 0, transition: 'opacity 0.15s',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(232,82,74,0.3)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(232,82,74,0.15)'; }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line>
                   </svg>
-                </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontFamily: 'JetBrains Mono, ui-monospace, monospace', color: active ? '#fff' : '#e8e6f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.name}
-                  </div>
-                  <div style={{ fontSize: 10, color: '#6e6a82', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.description}
-                  </div>
-                </span>
-                {active && (
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}>
-                    <path d="M2 5l2 2 4-5" stroke="#4a90d9" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                )}
-              </button>
+                </button>
+              </div>
             );
           })}
           <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '4px 4px' }} />
@@ -427,13 +438,36 @@ const TopResults = ({ results, mimeColors, onPick, onPickCluster }) => {
   );
 };
 
-const SearchBar = ({ value, onChange, onSubmit, suggestionsOpen, onFocus, onBlur, suggestions, onPickSuggestion, onClear, committedQuery, matches }) => {
+const SearchBar = ({ value, onChange, onSubmit, suggestionsOpen, onFocus, onBlur, suggestions, onPickSuggestion, onClear, committedQuery, matches, chatOpen, onChatToggle }) => {
   const isDirty = value !== committedQuery;
   return (
     <div style={{
       position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-      zIndex: 10, width: 'min(560px, 80vw)',
+      zIndex: 10, width: 'min(620px, 85vw)', display: 'flex', gap: 12, alignItems: 'flex-end'
     }}>
+      {/* Chat toggle button */}
+      <button
+        onClick={onChatToggle}
+        title={chatOpen ? 'Close chat' : 'Open chat'}
+        style={{
+          width: 44, height: 44,
+          border: chatOpen ? '0.5px solid rgba(74,144,217,0.5)' : '0.5px solid rgba(255,255,255,0.08)',
+          background: chatOpen ? 'rgba(74,144,217,0.15)' : 'rgba(10,10,15,0.85)',
+          backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+          color: chatOpen ? '#4a90d9' : '#c8c4d8', borderRadius: 999,
+          cursor: 'pointer', padding: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+          boxShadow: '0 18px 48px rgba(0,0,0,0.5)',
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 14 14" fill="none">
+          <path d="M7 1C3.686 1 1 3.239 1 6c0 1.543.72 2.93 1.87 3.895L2.5 13l3.23-1.54A6.42 6.42 0 007 11c3.314 0 6-2.239 6-5s-2.686-5-6-5z"
+                stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+        </svg>
+      </button>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       {suggestionsOpen && suggestions.length > 0 && (
         <div style={{
           marginBottom: 8, padding: 10,
@@ -531,6 +565,7 @@ const SearchBar = ({ value, onChange, onSubmit, suggestionsOpen, onFocus, onBlur
             </span>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
@@ -1359,15 +1394,17 @@ const ChatPanel = ({ open, onClose, projectRoot, surfaceLight, onAgentResult, on
 
   return (
     <div style={{
-      position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(360px, 38vw)',
+      position: 'absolute', bottom: 84, left: 24, top: 24, width: 'min(380px, 38vw)',
       zIndex: 25,
       background: surfaceBg,
-      borderLeft: '1px solid transparent',
-      borderImage: 'linear-gradient(180deg, #4a90d9, #7b52c0) 1',
+      border: '0.5px solid rgba(255,255,255,0.08)',
+      borderRadius: 12,
+      overflow: 'hidden',
       display: 'flex', flexDirection: 'column',
-      animation: 'slideInRight 0.28s cubic-bezier(0.2,0.8,0.2,1)',
-      boxShadow: '-20px 0 60px rgba(0,0,0,0.5)',
+      animation: 'slideInLeft 0.28s cubic-bezier(0.2,0.8,0.2,1)',
+      boxShadow: '20px 20px 60px rgba(0,0,0,0.5)',
     }}>
+      <style>{`@keyframes slideInLeft { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
       {/* Header */}
       <div style={{
         padding: '16px 18px 12px', borderBottom: '0.5px solid #2e2a40',

@@ -53,6 +53,13 @@ async function fetchProjects() {
   return d.projects || [];
 }
 
+async function deleteProject(pid) {
+  const r = await fetch(`${BASE}/api/projects/${encodeURIComponent(pid)}?drop_data=true`, {
+    method: 'DELETE',
+  });
+  return r.ok;
+}
+
 async function buildGraphFromBackend(projectRoot, projectName) {
   const pid = projectRoot || '';
   const url = `${BASE}/api/projection?query=&project=${encodeURIComponent(pid)}`;
@@ -199,5 +206,5 @@ function streamIndexProject(projectId, onEvent) {
 
 Object.assign(window, {
   MIME_COLORS, MIME_LABELS,
-  fetchProjects, buildGraphFromBackend, searchFiles, fetchFilePreview, openInDefaultApp, streamIndexProject,
+  fetchProjects, deleteProject, buildGraphFromBackend, searchFiles, fetchFilePreview, openInDefaultApp, streamIndexProject,
 });

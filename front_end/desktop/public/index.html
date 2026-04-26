@@ -441,8 +441,13 @@ function App() {
         logoVariant={tweaks.logoVariant}
         surfaceLight={tweaks.surfaceLight}
         onSwitchProject={() => setOverlay('onboarding')}
-        chatOpen={chatOpen}
-        onChatToggle={() => setChatOpen(o => !o)}
+        onDeleteProject={async (pid) => {
+          if (confirm('Delete this project?')) {
+            await window.deleteProject(pid);
+            if (projectRoot === pid) setProjectRoot(null);
+            fetchProjects().then(ps => setProjects(ps));
+          }
+        }}
       />
 
       <SettingsButton
@@ -476,6 +481,8 @@ function App() {
         onClear={() => { setSearchValue(''); setCommittedQuery(''); }}
         committedQuery={committedQuery}
         matches={totalMatches}
+        chatOpen={chatOpen}
+        onChatToggle={() => setChatOpen(o => !o)}
       />
 
       {selectedNode && !chatOpen && (

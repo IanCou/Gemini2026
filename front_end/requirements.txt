@@ -8,3 +8,5 @@ google-genai>=1.0
 google-api-core>=2.0
 python-magic
 python-dotenv>=1.0
+send2trash
+numpy>=1.26

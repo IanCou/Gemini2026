@@ -7,71 +7,76 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <!-- Collapsed: just the sprite icon -->
-    <div id="collapsed-view">
-      <button id="sprite-btn" aria-label="Open Sift">
-        <img src="sift-icon.png" alt="Sift" class="sprite-img" />
-      </button>
+    <div class="app">
+      <header class="topbar" data-tauri-drag-region>
+        <img src="sift-logo.png" alt="Sift" class="brand-logo" data-tauri-drag-region />
+        <div class="topbar-stats" id="topbar-stats">
+          <span class="dot dot-mongo" id="dot-mongo" title="MongoDB">●</span>
+          <span class="dot dot-gemini" id="dot-gemini" title="Gemini">●</span>
+          <span class="stat" id="stat-count">0 files indexed</span>
+          <span class="stat stat-project" id="stat-project"></span>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn-icon" id="btn-undo" title="Undo last action">↺</button>
+          <button class="btn-icon" id="btn-rules" title="Install agent rules in active project">⎘</button>
+          <button class="btn-icon" id="btn-settings" title="Settings">⚙</button>
+        </div>
+      </header>
+
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-head">
+          <span>Projects</span>
+          <button class="btn-mini" id="btn-new-project" title="Add project (browse for folder)">＋</button>
+        </div>
+        <ul class="proj-list" id="proj-list">
+          <li class="proj active" data-id=""><div class="proj-name">All files</div><div class="proj-meta"><span id="proj-meta-all">—</span></div></li>
+        </ul>
+        <div class="sidebar-foot">
+          <button class="btn-mini wide" id="btn-index-active" title="Index the active project's folder">⟳ Index project</button>
+        </div>
+      </aside>
+
+      <nav class="modebar">
+        <button class="mode active" data-mode="constellation">✦ Constellation</button>
+        <button class="mode" data-mode="pipeline">▸ Pipeline</button>
+        <button class="mode" data-mode="waterfall">▤ Scores</button>
+      </nav>
+
+      <section class="canvas-wrap">
+        <canvas id="viz"></canvas>
+        <div class="canvas-overlay" id="canvas-overlay"></div>
+      </section>
+
+      <section class="chat">
+        <div id="log" class="log" aria-live="polite"></div>
+        <form id="chat-form" class="chat-form">
+          <div class="input-row">
+            <textarea id="msg" rows="2" placeholder="Ask Sift, e.g. 'find the auth diagram'"></textarea>
+            <button type="submit" class="btn-send" aria-label="Send">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/>
+              </svg>
+            </button>
+          </div>
+          <div class="quickbar">
+            <button type="button" class="chip" data-cmd="/index">/index project</button>
+            <button type="button" class="chip" data-cmd="find the architecture diagram">find the architecture diagram</button>
+            <button type="button" class="chip" data-cmd="/clear">/clear</button>
+          </div>
+        </form>
+      </section>
+
+      <footer class="feed" id="feed" aria-live="polite"></footer>
     </div>
 
-    <!-- Expanded: full panel with tabs -->
-    <div id="expanded-view" class="hidden">
-      <div class="panel">
-        <div class="panel-header" data-tauri-drag-region>
-          <img src="sift-logo.png" alt="Sift" class="brand-logo" data-tauri-drag-region />
-          <button id="btn-minimize" class="btn-icon" aria-label="Minimize">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <rect x="3" y="7.25" width="10" height="1.5" rx="0.75" fill="currentColor"/>
-            </svg>
-          </button>
-        </div>
-
-        <div class="tab-bar">
-          <button class="tab active" data-tab="chat">Chat</button>
-          <button class="tab" data-tab="files">Files</button>
-          <button class="tab" data-tab="preview">Preview</button>
-        </div>
-
-        <!-- Chat -->
-        <div class="tab-content" id="tab-chat">
-          <div id="log" aria-live="polite"></div>
-          <form id="chat-form">
-            <div class="input-row">
-              <textarea id="msg" rows="1" placeholder="Enter for new line · ⌘↵ to send"></textarea>
-              <button type="submit" class="btn-send" aria-label="Send">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M22 2L11 13" /><path d="M22 2L15 22L11 13L2 9L22 2Z" />
-                </svg>
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <!-- Files -->
-        <div class="tab-content hidden" id="tab-files">
-          <div class="files-search-row">
-            <input type="text" id="files-search" class="files-search-input" placeholder="Filter or search files…" />
-            <button type="button" class="btn-sm btn-search" id="btn-quick-search" title="Semantic search">&#128269;</button>
-          </div>
-          <p class="files-hint" id="files-hint">
-            Files discovered by the agent appear here. Click to preview.
-          </p>
-          <div class="file-toolbar">
-            <button type="button" class="btn-sm" id="btn-clear-files">Clear list</button>
-          </div>
-          <ul class="file-list" id="file-list"></ul>
-        </div>
-
-        <!-- Preview -->
-        <div class="tab-content hidden" id="tab-preview">
-          <div class="preview-top">
-            <p class="preview-path" id="preview-path"></p>
-            <button type="button" class="btn-sm" id="btn-close-preview">Close</button>
-          </div>
-          <div id="preview-body" class="preview-body is-hidden"></div>
-          <p id="preview-placeholder" class="preview-placeholder">
-            Select a file from the Files tab to preview it here.
-          </p>
+    <div class="modal-backdrop hidden" id="modal-backdrop">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-title" id="modal-title">New project</div>
+        <div class="modal-sub" id="modal-sub"></div>
+        <input type="text" id="modal-input" autocomplete="off" />
+        <div class="modal-row">
+          <button type="button" id="modal-cancel" class="btn-mini">Cancel</button>
+          <button type="button" id="modal-ok" class="btn-mini btn-primary">Add project</button>
         </div>
       </div>
     </div>

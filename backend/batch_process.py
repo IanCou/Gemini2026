@@ -1,13 +1,14 @@
 import os
-from add_element import ingest_file_to_db
+import concurrent.futures
+from add_element import process_and_embed_file, bulk_upsert_documents
 
 TARGET_DIRECTORY = "/Users/william/yhacks_s26/test_directory"
-ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.txt', '.md'}
+EXCLUDED_SUFFIXES = ('.mp4', '.zip', '.csv', '.tar.gz', '.min.js', 'package-lock.json')
 
 def process_directory(directory_path):
     """
     Recursively finds all files in a directory and adds them 
-    to the vector database.
+    to the vector database using concurrent execution.
     """
     if not os.path.exists(directory_path):
         print(f"Error: Directory '{directory_path}' does not exist.")
@@ -15,33 +16,42 @@ def process_directory(directory_path):
 
     print(f"Starting batch ingestion for: {os.path.abspath(directory_path)}")
     
-    file_count = 0
-    success_count = 0
-
+    filepaths = []
     for root, dirs, files in os.walk(directory_path):
+        if '.git' in dirs:
+            dirs.remove('.git')
+
         for file in files:
             if file.startswith('.'):
                 continue
                 
-            ext = os.path.splitext(file)[1].lower()
-            if ext not in ALLOWED_EXTENSIONS:
-                print(f"Skipping unsupported file: {file}")
+            if file.lower().endswith(EXCLUDED_SUFFIXES):
+                print(f"Skipping excluded file: {file}")
                 continue
 
             file_path = os.path.join(root, file)
-            file_count += 1
-            
-            print(f"({file_count}) Processing: {file}...")
-            
-            try:
-                ingest_file_to_db(file_path)
-                success_count += 1
-            except Exception as e:
-                print(f"Failed to ingest {file}: {e}")
+            filepaths.append(file_path)
 
-    print(f"Ingestion complete")
-    print(f"Total files found: {file_count}")
-    print(f"Successfully indexed: {success_count}")
+    results = []
+    print(f"Total files found: {len(filepaths)}")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(process_and_embed_file, fp): fp for fp in filepaths}
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                doc = future.result()
+                if doc:
+                    results.append(doc)
+            except Exception as e:
+                print(f"Failed to process {futures[future]}: {e}")
+
+    print(f"Successfully generated embeddings for {len(results)} new/changed files.")
+    
+    if results:
+        print("Performing bulk upsert to MongoDB...")
+        bulk_upsert_documents(results)
+    
+    print("Ingestion complete.")
 
 if __name__ == "__main__":
     process_directory(TARGET_DIRECTORY)

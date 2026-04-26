@@ -170,6 +170,7 @@ def _path_allowed(p: Path) -> bool:
 class ChatRequest(BaseModel):
     session_id: str | None = None
     message: str = Field(..., min_length=1)
+    project_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -330,6 +331,16 @@ def agent_tools():
 def chat(req: ChatRequest):
     AIMessage, HumanMessage, SystemMessage, ToolMessage = _langchain_messages()
     mod = _import_agent()
+
+    if req.project_id:
+        proj = _project_by_id(req.project_id)
+        if proj:
+            os.environ["YHACKS_FS_ROOT"] = proj["root"]
+            os.environ["YHACKS_ACTIVE_PROJECT_ID"] = req.project_id
+        else:
+            os.environ.pop("YHACKS_ACTIVE_PROJECT_ID", None)
+    else:
+        os.environ.pop("YHACKS_ACTIVE_PROJECT_ID", None)
 
     sid = req.session_id or str(uuid.uuid4())
     if sid not in _sessions:
@@ -560,15 +571,34 @@ def semantic_search(
     q: str = Query(..., min_length=1),
     k: int = Query(default=10, ge=1, le=20),
     min_score: float = Query(default=0.60, ge=0.0, le=1.0),
+    project: str = Query(default=""),
 ):
     try:
         from query_elements import similarity_search_with_score
     except ImportError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
+    pid = project.strip() or None
+    # Pull more candidates so post-filter still has a useful k.
+    fetch_k = k * 5 if pid else k
+    fetch_k = min(max(fetch_k, k), 100)
     try:
-        results = similarity_search_with_score(q, k=k)
+        results = similarity_search_with_score(q, k=fetch_k)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+    if pid:
+        try:
+            from pymongo import MongoClient
+            uri = os.environ.get("MONGO_URI", "")
+            if uri:
+                coll = MongoClient(uri)["yhacks"]["files"]
+                ids = [d.get("_id") for d, _ in results if d.get("_id")]
+                if ids:
+                    keep = {d["_id"] for d in coll.find({"_id": {"$in": ids}, "project_id": pid}, {"_id": 1})}
+                    results = [(d, s) for d, s in results if d.get("_id") in keep]
+        except Exception:
+            pass
+        results = results[:k]
 
     filtered = _filter_by_score_gap(results, min_score=min_score)
 
@@ -671,6 +701,369 @@ def semantic_index_directory(body: IndexDirectoryBody):
 @app.get("/api/workspace/roots")
 def workspace_roots():
     return {"roots": [str(r) for r in _content_roots()]}
+
+
+# ---------------------------------------------------------------------------
+# SSE: live indexing pipeline (drives the Pipeline View visualization)
+# ---------------------------------------------------------------------------
+
+
+def _sse(event: str, data: dict) -> str:
+    import json as _json
+    return f"event: {event}\ndata: {_json.dumps(data)}\n\n"
+
+
+@app.get("/api/index/stream")
+def index_stream(
+    rel_path: str = Query(default="", description="Optional folder; defaults to project root"),
+    project: str = Query(default="", description="Project id; tags every doc with project_id and uses its root"),
+):
+    """Index a directory, streaming per-file pipeline stages as SSE events.
+
+    Event types: start, stage (file, stage in {loaded,embed,insert,done,error}), end.
+    If `project` is set, files are scanned under the project's stored root (rel_path is treated as a
+    relative subpath under it) and tagged with `project_id` in MongoDB.
+    """
+    from fastapi.responses import StreamingResponse
+
+    try:
+        import add_element  # noqa: F401
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    pid = project.strip() or None
+    proj = _project_by_id(pid) if pid else None
+    if pid and not proj:
+        raise HTTPException(status_code=404, detail=f"Project not found: {pid}")
+
+    s = rel_path.strip()
+    # Expand ~ so /index ~/anywhere works without a project.
+    if s.startswith("~"):
+        s = str(Path(s).expanduser())
+    if proj:
+        proj_root = Path(proj["root"]).expanduser().resolve()
+        if not proj_root.is_dir():
+            raise HTTPException(status_code=400, detail=f"Project root missing: {proj_root}")
+        root = (proj_root / s).resolve() if s and not os.path.isabs(s) else (Path(s).expanduser().resolve() if s else proj_root)
+        try:
+            root.relative_to(proj_root)
+        except ValueError as e:
+            raise HTTPException(status_code=403, detail="Path outside project root.") from e
+    else:
+        if not s:
+            raise HTTPException(status_code=400, detail="rel_path required when no project is set")
+        if os.path.isabs(s):
+            # User-picked absolute paths (via Finder dialog or /index /abs) are allowed
+            # outside YHACKS_FS_ROOT — they're explicit; no chance of accidental escape.
+            root = Path(s).expanduser().resolve()
+        else:
+            root = _safe_resolve_under_roots(s)
+    if not root.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a directory: {root}")
+
+    def gen():
+        from add_element import ingest_file_to_db as _ingest, collection as _coll
+        from bson.objectid import ObjectId as _OID
+        files: list[Path] = []
+        for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            for name in filenames:
+                if name.startswith("."):
+                    continue
+                if Path(name).suffix.lower() not in _INDEX_EXTENSIONS:
+                    continue
+                fp = Path(dirpath) / name
+                # Project-scoped indexing: skip the global path-allowed check.
+                if proj or _path_allowed(fp):
+                    files.append(fp.resolve())
+        yield _sse("start", {"root": str(root), "total": len(files), "project": pid})
+        for fp in files:
+            yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "loaded"})
+            try:
+                yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "embed"})
+                oid = _ingest(str(fp), None)
+                if oid is None:
+                    yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "error", "error": "embed_failed"})
+                    continue
+                if pid:
+                    try:
+                        _coll.update_one({"_id": _OID(str(oid))}, {"$set": {"project_id": pid}})
+                    except Exception:
+                        pass
+                yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "insert"})
+                yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "done", "oid": str(oid)})
+            except Exception as e:
+                yield _sse("stage", {"file": fp.name, "path": str(fp), "stage": "error", "error": str(e)[:200]})
+        yield _sse("end", {"root": str(root), "total": len(files), "project": pid})
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    })
+
+
+# ---------------------------------------------------------------------------
+# Projection: PCA over stored embeddings → 2-D coords for the Constellation View
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/projection")
+def projection(query: str | None = Query(default=None), project: str = Query(default="")):
+    """Return 2-D PCA coords for every indexed file. Optionally include the query embedding too."""
+    try:
+        from pymongo import MongoClient
+        import numpy as np
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    uri = os.environ.get("MONGO_URI")
+    if not uri:
+        raise HTTPException(status_code=503, detail="MONGO_URI not set")
+    coll = MongoClient(uri)["yhacks"]["files"]
+    pid = project.strip() or None
+    flt = {"project_id": pid} if pid else {}
+    docs = list(coll.find(flt, {"filename": 1, "filepath": 1, "file_type": 1, "embedding": 1, "project_id": 1}))
+    if len(docs) < 2:
+        return {"points": [], "query": None, "count": len(docs)}
+    M = np.array([d["embedding"] for d in docs], dtype="float32")
+    M = M - M.mean(axis=0, keepdims=True)
+    U, S, Vt = np.linalg.svd(M, full_matrices=False)
+    coords = (M @ Vt[:2].T)
+    cx = coords - coords.mean(axis=0, keepdims=True)
+    scale = float(np.max(np.abs(cx))) or 1.0
+    cx = cx / scale
+    points = [
+        {
+            "_id": str(d.get("_id")),
+            "filename": d.get("filename"),
+            "filepath": d.get("filepath"),
+            "file_type": d.get("file_type"),
+            "x": float(cx[i, 0]),
+            "y": float(cx[i, 1]),
+        }
+        for i, d in enumerate(docs)
+    ]
+    qpoint = None
+    if query and query.strip():
+        try:
+            from input_to_embedding import get_query_embedding
+            qv = get_query_embedding(query.strip())
+            if qv:
+                q = np.array(qv, dtype="float32") - M.mean(axis=0, keepdims=True).flatten()
+                qproj = (q @ Vt[:2].T) / scale
+                qpoint = {"x": float(qproj[0]), "y": float(qproj[1]), "query": query.strip()}
+        except Exception:
+            pass
+    return {"points": points, "query": qpoint, "count": len(docs)}
+
+
+# ---------------------------------------------------------------------------
+# Install agent rules into a workspace (the IDE-integration one-click)
+# ---------------------------------------------------------------------------
+
+
+_RULES_TEXT = """You have access to a local semantic search engine called Sift, running on
+http://127.0.0.1:8765. Sift can see inside images and PDFs.
+
+When you need to find a file, locate a diagram, understand the architecture,
+or look for context, DO NOT use grep, find, or fuzzy file search first.
+Instead, fetch:
+
+  GET http://127.0.0.1:8765/api/semantic/search?q=<urlencoded>&k=5
+
+Read the JSON `hits` array. Each hit has `filename`, `filepath`, `file_type`,
+and `score`. Trust hits with score >= 0.65; ignore the rest. Open files via
+`filepath`. Fall back to grep only if no hits clear the threshold.
+"""
+
+
+class InstallRulesBody(BaseModel):
+    rel_path: str = Field(default="", description="Workspace folder; defaults to project root or YHACKS_FS_ROOT")
+    project: str = Field(default="", description="Project id; if set, drops rules into the project's root")
+
+
+@app.post("/api/install_rules")
+def install_rules(body: InstallRulesBody):
+    pid = (body.project or "").strip()
+    raw = (body.rel_path or "").strip()
+    if pid:
+        proj = _project_by_id(pid)
+        if not proj:
+            raise HTTPException(status_code=404, detail=f"Project not found: {pid}")
+        target = Path(proj["root"]).expanduser().resolve()
+    elif raw:
+        if os.path.isabs(raw):
+            target = Path(raw).expanduser().resolve()
+        else:
+            target = _safe_resolve_under_roots(raw)
+    else:
+        target = _REPO_ROOT.resolve()
+    if not target.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a directory: {target}")
+    written: list[str] = []
+    for fname in (".cursorrules", ".antigravity_rules", "AGENTS.md"):
+        p = target / fname
+        try:
+            p.write_text(_RULES_TEXT, encoding="utf-8")
+            written.append(str(p))
+        except Exception as e:
+            written.append(f"FAIL {p}: {e}")
+    return {"ok": True, "target": str(target), "written": written}
+
+
+# ---------------------------------------------------------------------------
+# Stats (for the activity feed header)
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Projects (Codex-style scoped workspaces, persisted to ~/.sift/projects.json)
+# ---------------------------------------------------------------------------
+
+
+_PROJECTS_FILE = Path.home() / ".sift" / "projects.json"
+
+
+def _load_projects() -> list[dict[str, Any]]:
+    try:
+        if _PROJECTS_FILE.is_file():
+            import json as _json
+            return _json.loads(_PROJECTS_FILE.read_text())
+    except Exception:
+        pass
+    return []
+
+
+def _save_projects(projects: list[dict[str, Any]]) -> None:
+    import json as _json
+    _PROJECTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _PROJECTS_FILE.write_text(_json.dumps(projects, indent=2))
+
+
+def _project_by_id(pid: str) -> dict[str, Any] | None:
+    for p in _load_projects():
+        if p.get("id") == pid:
+            return p
+    return None
+
+
+@app.get("/api/projects")
+def list_projects():
+    """Return all projects + the doc count per project (live from MongoDB)."""
+    projects = _load_projects()
+    counts: dict[str, int] = {}
+    try:
+        from pymongo import MongoClient
+        uri = os.environ.get("MONGO_URI", "")
+        if uri:
+            coll = MongoClient(uri, serverSelectionTimeoutMS=3000)["yhacks"]["files"]
+            for d in coll.aggregate([{"$group": {"_id": "$project_id", "n": {"$sum": 1}}}]):
+                counts[str(d["_id"])] = d["n"]
+    except Exception:
+        pass
+    for p in projects:
+        p["count"] = counts.get(p.get("id", ""), 0)
+    untagged = counts.get("None", 0) + counts.get("", 0)
+    return {"projects": projects, "untagged": untagged}
+
+
+class ProjectCreateBody(BaseModel):
+    name: str = Field(..., min_length=1)
+    root: str = Field(..., min_length=1)
+
+
+@app.post("/api/projects")
+def create_project(body: ProjectCreateBody):
+    name = body.name.strip()
+    root = Path(body.root).expanduser().resolve()
+    if not root.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a directory: {root}")
+    pid = uuid.uuid4().hex[:12]
+    proj = {"id": pid, "name": name, "root": str(root)}
+    projects = _load_projects()
+    projects.append(proj)
+    _save_projects(projects)
+    return proj
+
+
+@app.delete("/api/projects/{pid}")
+def delete_project(pid: str, drop_data: bool = Query(default=False)):
+    projects = _load_projects()
+    keep = [p for p in projects if p.get("id") != pid]
+    if len(keep) == len(projects):
+        raise HTTPException(status_code=404, detail="Project not found")
+    _save_projects(keep)
+    deleted = 0
+    if drop_data:
+        try:
+            from pymongo import MongoClient
+            uri = os.environ.get("MONGO_URI", "")
+            if uri:
+                coll = MongoClient(uri)["yhacks"]["files"]
+                deleted = coll.delete_many({"project_id": pid}).deleted_count
+        except Exception:
+            pass
+    return {"ok": True, "deleted_docs": deleted}
+
+
+@app.get("/api/dialog/pick_folder")
+def pick_folder():
+    """Open a native folder picker (Finder on macOS, Explorer on Windows)."""
+    import subprocess
+    import sys as _sys
+    try:
+        if _sys.platform == "darwin":
+            script = (
+                'try\n'
+                '  set f to POSIX path of (choose folder with prompt "Select project folder")\n'
+                '  return f\n'
+                'on error number -128\n'
+                '  return ""\n'
+                'end try'
+            )
+            r = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=120,
+            )
+            path = (r.stdout or "").strip()
+            return {"path": path or None}
+        if _sys.platform.startswith("win"):
+            ps = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "if ($f.ShowDialog() -eq 'OK') { Write-Output $f.SelectedPath }"
+            )
+            r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                               capture_output=True, text=True, timeout=120)
+            path = (r.stdout or "").strip()
+            return {"path": path or None}
+        # Linux fallback: zenity if installed
+        r = subprocess.run(["zenity", "--file-selection", "--directory"],
+                           capture_output=True, text=True, timeout=120)
+        path = (r.stdout or "").strip()
+        return {"path": path or None}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=f"No native folder picker available: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/api/stats")
+def stats(project: str = Query(default="")):
+    try:
+        from pymongo import MongoClient
+        uri = os.environ.get("MONGO_URI", "")
+        if not uri:
+            return {"count": 0, "by_type": {}, "mongo": False}
+        coll = MongoClient(uri, serverSelectionTimeoutMS=3000)["yhacks"]["files"]
+        pid = project.strip() or None
+        flt = {"project_id": pid} if pid else {}
+        n = coll.count_documents(flt)
+        pipeline = [{"$match": flt}, {"$group": {"_id": "$file_type", "n": {"$sum": 1}}}] if flt \
+            else [{"$group": {"_id": "$file_type", "n": {"$sum": 1}}}]
+        by_type = {(d["_id"] or "?"): d["n"] for d in coll.aggregate(pipeline)}
+        return {"count": n, "by_type": by_type, "mongo": True, "project": pid}
+    except Exception as e:
+        return {"count": 0, "by_type": {}, "mongo": False, "error": str(e)[:160]}
 
 
 if __name__ == "__main__":

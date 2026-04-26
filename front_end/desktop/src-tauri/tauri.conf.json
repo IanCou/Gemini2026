@@ -14,14 +14,16 @@
     "windows": [
       {
         "label": "main",
-        "title": "CopperGolem",
-        "width": 72,
-        "height": 72,
-        "resizable": false,
-        "transparent": true,
-        "decorations": false,
-        "alwaysOnTop": true,
-        "shadow": false
+        "title": "Sift",
+        "width": 520,
+        "height": 760,
+        "minWidth": 420,
+        "minHeight": 600,
+        "resizable": true,
+        "transparent": false,
+        "decorations": true,
+        "alwaysOnTop": false,
+        "shadow": true
       }
     ],
     "security": {

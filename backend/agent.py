@@ -544,7 +544,8 @@ def semantic_file_search(query: str, k: int = 5) -> str:
     documents in ``yhacks.files``.
     """
     try:
-        pairs = similarity_search_with_score(query=query, k=max(1, min(int(k), 20)))
+        pid = os.environ.get("YHACKS_ACTIVE_PROJECT_ID")
+        pairs = similarity_search_with_score(query=query, k=max(1, min(int(k), 20)), project_id=pid)
     except Exception as e:
         return f"Search failed: {e}"
     if not pairs:

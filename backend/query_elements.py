@@ -18,7 +18,7 @@ db_client = MongoClient(MONGO_URI)
 collection = db_client[DB_NAME][COLLECTION_NAME]
 
 def similarity_search_with_score(
-    query: str, k: int = 3,
+    query: str, k: int = 3, project_id: str | None = None
 ) -> list[tuple[dict, float]]:
     """
     LangChain-style API: returns [(document_fields, score), ...].
@@ -34,15 +34,18 @@ def similarity_search_with_score(
         print("No query vector returned (check GEMINI_API_KEY / embedding errors).")
         return []
 
+    fetch_k = (k * 10) if project_id else k
+    vs = {
+        "index": VECTOR_INDEX_NAME,
+        "path": "embedding",
+        "queryVector": query_embedding,
+        "numCandidates": max(50, fetch_k * 10),
+        "limit": fetch_k,
+    }
+        
     pipeline = [
         {
-            "$vectorSearch": {
-                "index": VECTOR_INDEX_NAME,
-                "path": "embedding",
-                "queryVector": query_embedding,
-                "numCandidates": max(50, k * 10),
-                "limit": k,
-            }
+            "$vectorSearch": vs
         },
         {
             "$project": {
@@ -67,7 +70,13 @@ def similarity_search_with_score(
         print(f"MongoDB $vectorSearch failed: {details}")
         return []
 
-    return out
+    if project_id:
+        ids = [d.get("_id") for d, _ in out if d.get("_id")]
+        if ids:
+            keep = {d["_id"] for d in collection.find({"_id": {"$in": ids}, "project_id": project_id}, {"_id": 1})}
+            out = [(d, s) for d, s in out if d.get("_id") in keep]
+
+    return out[:k]
 
 
 if __name__ == "__main__":

@@ -27,10 +27,10 @@ def get_multimodal_embedding(file_path, description=None, task_type="RETRIEVAL_D
         if is_text:
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
-                    text = f.read()
+                    text = f.read()[:10000]
             except UnicodeDecodeError:
                 with open(file_path, "r", encoding="latin-1") as f:
-                    text = f.read()
+                    text = f.read()[:10000]
             content_parts.append(text)
             print(f"Prepared {mime_type} as text for embedding: {os.path.basename(file_path)}")
         else:

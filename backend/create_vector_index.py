@@ -11,7 +11,7 @@ from pymongo import MongoClient
 from pymongo.operations import SearchIndexModel
 
 MONGO_URI = os.getenv("MONGO_URI")
-DB_NAME = "yhacks"
+DB_NAME = "nebula"
 COLLECTION_NAME = "files"
 INDEX_NAME = "vector_index"
 EMBEDDING_DIMS = 768

@@ -5,7 +5,7 @@ Environment:
 
 - ``GEMINI_API_KEY`` — required.
 - ``MONGO_URI`` — for vector tools.
-- ``YHACKS_FS_ROOT`` — optional; all FS tools confine paths under this directory (default: cwd).
+- ``NEBULA_FS_ROOT`` — optional; all FS tools confine paths under this directory (default: cwd).
 
 Plan JSON (``preview_plan`` / ``execute_plan``): a JSON array of objects:
 
@@ -42,6 +42,88 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from rapidfuzz import fuzz
+
+_SKIP_DIR_NAMES = frozenset({".git", "node_modules", ".venv", "venv", "__pycache__", "target", "dist", "build", ".cursor"})
+_FUZZY_MIN_SCORE = 72
+_FUZZY_MIN_SCORE_SHORT = 84
+_FUZZY_AMBIGUITY_GAP = 9
+_STOPWORDS = frozenset({"the", "a", "an", "to", "for", "and", "or", "file", "files", "folder", "this", "that", "my", "me", "please", "rename", "renamed", "move", "into", "called"})
+_rename_stack: list[tuple[str, str]] = []
+
+def _normalize_hint_text(s: str) -> str:
+    s = s.lower().strip()
+    s = re.sub(r"[^\w\s]+", " ", s, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", s).strip()
+
+def _keyword_only_hint(normalized: str) -> str:
+    words = [w for w in normalized.split() if w not in _STOPWORDS and len(w) > 1]
+    return " ".join(words) if words else normalized
+
+def _path_name_similarity(hint_raw: str, p: Path, base: Path) -> int:
+    raw = hint_raw.strip().strip('`"\'')
+    if not raw: return 0
+    full_norm = _normalize_hint_text(raw)
+    key_norm = _keyword_only_hint(full_norm)
+    try:
+        rel = str(p.relative_to(base))
+    except Exception:
+        rel = str(p)
+    candidates = (p.name, p.stem, rel, rel.replace("/", " ").replace("\\", " "))
+    best = 0
+    for hint_variant in (raw.lower(), full_norm, key_norm):
+        if not hint_variant: continue
+        for pv in candidates:
+            pl = pv.lower()
+            best = max(best, fuzz.WRatio(hint_variant, pl), fuzz.token_set_ratio(hint_variant, pl), fuzz.partial_token_sort_ratio(hint_variant, pl), fuzz.partial_ratio(hint_variant, pl))
+    return int(best)
+
+def _fuzzy_min_for_hint(hint_raw: str) -> int:
+    key = _keyword_only_hint(_normalize_hint_text(hint_raw))
+    tokens = [t for t in key.split() if len(t) > 1]
+    if len(tokens) <= 1: return _FUZZY_MIN_SCORE_SHORT
+    return _FUZZY_MIN_SCORE
+
+def _find_sources_for_hint(hint: str) -> list[Path]:
+    raw = hint.strip().strip('`"\'')
+    if not raw: return []
+    base = _fs_root()
+    try:
+        resolved = _resolve_under_root(raw)
+        if resolved.exists(): return [resolved]
+    except ValueError: pass
+
+    last = Path(raw).name
+    want_name = last.lower()
+    want_stem = Path(last).stem.lower()
+
+    exact: list[Path] = []
+    by_stem: list[Path] = []
+    all_paths: list[Path] = []
+
+    for p in base.rglob("*"):
+        if not p.exists(): continue
+        if any(part in _SKIP_DIR_NAMES for part in p.parts): continue
+        try: p.relative_to(base)
+        except ValueError: continue
+        all_paths.append(p)
+        if p.name.lower() == want_name: exact.append(p)
+        elif p.stem.lower() == want_stem: by_stem.append(p)
+
+    if exact: return sorted({p.resolve() for p in exact}, key=lambda x: str(x))
+    if by_stem: return sorted({p.resolve() for p in by_stem}, key=lambda x: str(x))
+
+    min_fuzzy = _fuzzy_min_for_hint(raw)
+    scored = []
+    for p in all_paths:
+        s = _path_name_similarity(raw, p, base)
+        if s >= min_fuzzy: scored.append((s, p.resolve()))
+    if not scored: return []
+    scored.sort(key=lambda x: (-x[0], str(x[1])))
+    best = scored[0][0]
+    band = [path for score, path in scored if score >= best - _FUZZY_AMBIGUITY_GAP]
+    return sorted(set(band), key=str)
+
 try:
     import magic
 except ImportError:  # pragma: no cover
@@ -76,7 +158,9 @@ DEFAULT_AGENT_SYSTEM = (
     "For JSON plans, call execute_plan: it shows a plan preview before running steps. "
     "Use execute_plan(plan_json, dry_run=True) to preview without side effects. "
     "preview_plan is optional; it duplicates what execute_plan shows first. "
+    "Use list_directory to explore folders and discover filenames. "
     "Use ask_about_files to answer questions about one or more local files (paths under the project root). "
+    "If the user asks you to rename or organize images or files based on their contents, YOU MUST USE list_directory to find the files, then USE ask_about_files FIRST to look at them, then use rename_file to rename them. "
     "Removals use the system Trash (send2trash). On macOS/Linux, undo_last_action can restore "
     "remove_file steps when the tool records an undo batch; do not claim undo worked unless it did."
 )
@@ -86,7 +170,7 @@ DEFAULT_AGENT_SYSTEM = (
 # Filesystem root + undo stack (used by create_folder / plan / undo)
 # ---------------------------------------------------------------------------
 
-# All FS tools confine paths under this directory (set YHACKS_FS_ROOT to your project root).
+# All FS tools confine paths under this directory (set NEBULA_FS_ROOT to your project root).
 _undo_stack: list[list[dict[str, Any]]] = []
 
 # ``ask_about_files``: Gemini / LangChain practical limits per request
@@ -95,7 +179,7 @@ _ASK_MAX_BYTES_PER_FILE = 100 * 1024 * 1024
 
 
 def _fs_root() -> Path:
-    raw = os.environ.get("YHACKS_FS_ROOT", "").strip()
+    raw = os.environ.get("NEBULA_FS_ROOT", "").strip()
     if raw:
         return Path(raw).expanduser().resolve()
     return Path.cwd().resolve()
@@ -537,14 +621,127 @@ def _run_undo_step(u: dict[str, Any]) -> None:
 
 
 @tool
+def rename_file(source_path: str, destination_path: str) -> str:
+    """Rename or move a file or directory under the current working directory.
+
+    ``source_path`` may be a natural description: exact basename, stem, or a loose phrase.
+    ``destination_path`` may use subfolders. If the source is a file with an extension and 
+    the destination has no extension, the same extension is kept.
+    Fails if destination already exists. Reversible by ``undo_last_file_rename``.
+    """
+    try:
+        dst = _resolve_under_root(destination_path)
+    except ValueError as e:
+        return str(e)
+
+    candidates = _find_sources_for_hint(source_path)
+    if not candidates:
+        return f"No file matches {source_path!r}."
+    if len(candidates) > 1:
+        lines = "\n".join(f"  - {c.relative_to(_fs_root())}" for c in candidates[:25])
+        return f"Multiple matches for {source_path!r}; be more specific:\n{lines}"
+
+    src = candidates[0]
+    if dst.exists(): return f"Destination already exists: {dst}"
+
+    if src.is_file() and not dst.suffix and src.suffix:
+        dst = dst.with_suffix(src.suffix)
+
+    if dst.exists(): return f"Destination already exists: {dst}"
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    src_abs, dst_abs = str(src), str(dst)
+    try:
+        src.rename(dst)
+    except OSError as e:
+        return f"Rename failed: {e}"
+    
+    _rename_stack.append((src_abs, dst_abs))
+    
+    mongo_msg = ""
+    try:
+        n = _mongo_sync_after_move(src_abs, dst_abs)
+        mongo_msg = f" (MongoDB rows updated: {n})"
+    except Exception as e:
+        mongo_msg = f" (MongoDB sync failed: {e})"
+
+    return f"Renamed: {src_abs} -> {dst_abs}{mongo_msg}"
+
+
+@tool
+def undo_last_file_rename() -> str:
+    """Undo the most recent successful rename_file."""
+    if not _rename_stack:
+        return "Nothing to undo."
+    old_abs, new_abs = _rename_stack.pop()
+    new_p, old_p = Path(new_abs), Path(old_abs)
+    
+    if not new_p.exists():
+        _rename_stack.append((old_abs, new_abs))
+        return f"Cannot undo: {new_p} does not exist."
+    if old_p.exists():
+        _rename_stack.append((old_abs, new_abs))
+        return f"Cannot undo: original path already exists: {old_p}"
+        
+    try:
+        new_p.rename(old_p)
+    except OSError as e:
+        _rename_stack.append((old_abs, new_abs))
+        return f"Undo failed: {e}"
+        
+    mongo_msg = ""
+    try:
+        n = _mongo_sync_after_move(new_abs, old_abs)
+        mongo_msg = f" (MongoDB rows updated: {n})"
+    except Exception as e:
+        mongo_msg = f" (MongoDB sync failed: {e})"
+        
+    return f"Undid rename: {new_p} -> {old_p}{mongo_msg}"
+
+
+@tool
+def list_directory(path: str = ".") -> str:
+    """List contents of a directory under the project root.
+    
+    Use this to find what files exist before acting on them. ``path`` defaults to ``.`` (the root).
+    Returns a list of files and folders with their sizes.
+    """
+    try:
+        p = _resolve_under_root(path)
+    except ValueError as e:
+        return str(e)
+    
+    if not p.exists():
+        return f"Directory not found: {path}"
+    if not p.is_dir():
+        return f"Not a directory: {path}"
+        
+    try:
+        entries = sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name))
+    except OSError as e:
+        return f"Failed to read directory: {e}"
+        
+    if not entries:
+        return f"Directory is empty: {path}"
+        
+    lines = [f"Contents of {p.relative_to(_fs_root())}:"]
+    for e in entries:
+        if e.is_dir():
+            lines.append(f"[DIR]  {e.name}/")
+        else:
+            lines.append(f"[FILE] {e.name} ({e.stat().st_size} bytes)")
+    return "\n".join(lines)
+
+
+@tool
 def semantic_file_search(query: str, k: int = 15) -> str:
     """Search indexed files by natural-language meaning (vector similarity on Gemini embeddings).
 
     Returns filenames, paths, MIME types, and scores. Requires Atlas vector index READY and
-    documents in ``yhacks.files``.
+    documents in ``nebula.files``.
     """
     try:
-        pid = os.environ.get("YHACKS_ACTIVE_PROJECT_ID")
+        pid = os.environ.get("NEBULA_ACTIVE_PROJECT_ID")
         pairs = similarity_search_with_score(query=query, k=max(1, min(int(k), 20)), project_id=pid)
     except Exception as e:
         return f"Search failed: {e}"
@@ -568,7 +765,7 @@ def semantic_file_search(query: str, k: int = 15) -> str:
 def ask_about_files(question: str, file_paths: str) -> str:
     """Read one or more files from disk and answer ``question`` using Gemini (multimodal ``ChatGoogleGenerativeAI``).
 
-    Paths must be under the project root (``YHACKS_FS_ROOT`` or cwd). ``file_paths`` is either:
+    Paths must be under the project root (``NEBULA_FS_ROOT`` or cwd). ``file_paths`` is either:
     - A JSON array of relative paths, e.g. ``["notes/a.pdf", "img/b.png"]``
     - A single relative path as plain text, e.g. ``"docs/readme.txt"``
 
@@ -612,12 +809,14 @@ def ask_about_files(question: str, file_paths: str) -> str:
         return f"Failed to read files: {e}"
 
     preamble = (
-        f"The user attached {len(content)} file(s): {', '.join(labels)}.\n"
+        f"The user attached {len(content)} file(s). "
         "Answer using the file contents when relevant. If they are not enough, say so.\n\n"
         f"Question:\n{q}"
     )
     parts: list[dict[str, Any]] = [{"type": "text", "text": preamble}]
-    parts.extend(content)
+    for label, media in zip(labels, content):
+        parts.append({"type": "text", "text": f"--- FILE: {label} ---"})
+        parts.append(media)
     try:
         resp = llm.invoke([HumanMessage(content=parts)])
     except Exception as e:
@@ -744,7 +943,7 @@ def preview_plan(plan_json: str) -> str:
       "mongo_id": "674a1b2c3d4e5f6789012345"},
      {"action": "remove_folder", "path": "notes/old_batch"}]
 
-    Use ``mongo_id`` on ``move_file`` / ``remove_file`` when targeting one row. Paths are under the project root (``YHACKS_FS_ROOT`` or cwd)."""
+    Use ``mongo_id`` on ``move_file`` / ``remove_file`` when targeting one row. Paths are under the project root (``NEBULA_FS_ROOT`` or cwd)."""
     try:
         steps = _parse_plan_json(plan_json)
     except Exception as e:
@@ -816,7 +1015,10 @@ def undo_last_action() -> str:
 
 AGENT_TOOLS = [
     semantic_file_search,
+    list_directory,
     ask_about_files,
+    rename_file,
+    undo_last_file_rename,
     trash_file,
     preview_plan,
     execute_plan,

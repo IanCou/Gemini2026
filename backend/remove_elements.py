@@ -3,7 +3,7 @@ from bson.objectid import ObjectId
 import os
 
 MONGO_URI = os.getenv("MONGO_URI")
-DB_NAME = "yhacks"
+DB_NAME = "nebula"
 COLLECTION_NAME = "files"
 
 client = MongoClient(MONGO_URI)

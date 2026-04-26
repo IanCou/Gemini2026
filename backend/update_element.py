@@ -12,7 +12,7 @@ from typing import Any
 from bson.objectid import ObjectId
 from pymongo import MongoClient
 MONGO_URI = os.getenv("MONGO_URI")
-DB_NAME = "yhacks"
+DB_NAME = "nebula"
 COLLECTION_NAME = "files"
 
 client = MongoClient(MONGO_URI)
@@ -105,5 +105,5 @@ if __name__ == "__main__":
     
     update_filepath_by_id(
         "69c8280d2c2cc24b44e5d86d",
-        "/Users/william/yhacks_s26/exact_names_final/5xm98t580u/person_portrait.jpeg",
+        "/Users/william/nebula_s26/exact_names_final/5xm98t580u/person_portrait.jpeg",
     )
